@@ -23,7 +23,7 @@ bool ray_vs_rect(vec2f_t ray_origin, vec2f_t ray_dir, rect_t target, vec2f_t *co
 
     if (isnan(t_far_y) || isnan(t_far_x)) return false;
     if (isnan(t_near_y) || isnan(t_near_x)) return false;
-    
+
     if (t_near_x > t_far_x) swapf(&t_near_x, &t_far_x);
     if (t_near_y > t_far_y) swapf(&t_near_y, &t_far_y);
 
