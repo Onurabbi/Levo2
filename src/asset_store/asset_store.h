@@ -11,7 +11,7 @@ typedef struct
 }asset_store_t;
 
 void asset_store_init(asset_store_t *asset_store);
-vulkan_texture_t *asset_store_add_texture(asset_store_t *asset_store, vulkan_renderer_t *renderer, const char *asset_id, const char *file_path);
+void asset_store_add_texture(asset_store_t *asset_store, vulkan_renderer_t *renderer, const char *asset_id, const char *file_path);
 vulkan_texture_t *asset_store_get_texture(asset_store_t *store, const char* asset_id);
 #endif
 

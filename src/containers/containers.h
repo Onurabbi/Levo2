@@ -19,6 +19,7 @@
 
 #define bulk_data_get_wp(bd, wp) (((bd)->items[(wp).id + 1].generation == (wp).generation) ? (bulk_data_getp((bd),(wp).id)) : NULL)
 
+#define bulk_data_ptr_to_i(bd,ptr,type) (((ptr) - (bd)->items[0].data) * (sizeof(object_##type) / sizeof(item_##type)))
 #define bulk_data_delete_item(bd, i)                                \
 do                                                                  \
 {                                                                   \
@@ -28,13 +29,16 @@ do                                                                  \
     (bd)->items[0].next          = i + 1;                           \
 } while(0)  
 
+#define bulk_data_delete_ptr(bd,ptr,type) (bulk_data_delete_item((bd), bulk_data_ptr_to_i((bd), (ptr), (type))))
+
 #define bulk_data_push(bd) ((bd)->slot = (bd)->items[0].next,                                   \
                             (bd)->items[0].next = (bd)->items[(bd)->slot].next,                 \
                             (bd)->slot ? (bd_no_grow_slot((bd))) : (bd_grow_slot((bd)))) 
 #define bulk_data_getp_raw(bd, i) (&(bd)->items[(i) + 1].data)
 
 #define bulk_data_push_struct(bd) (bulk_data_getp_raw((bd), bulk_data_push((bd))))
-#define bulk_data_push_value(bd, v) ((bd)->slot = bulk_data_push(&(bd)), bulk_data_seti((bd), (bd)->slot))
+#define bulk_data_push_structi(bd) (bulk_data_push((bd)))
+#define bulk_data_push_value(bd, v) ((bd)->slot = bulk_data_push(&(bd)), bulk_data_seti((bd), (bd)->slot, (v)), (bd)->slot)
 
 /**********************getters************************************ */
 //return data if exists, return 0 or NULL if not
