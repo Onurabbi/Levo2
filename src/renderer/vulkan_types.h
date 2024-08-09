@@ -30,17 +30,12 @@ typedef struct
     VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
 }vulkan_texture_t;
 
-typedef struct
-{
-    vulkan_texture_t *texture;
-    rect_t            src_rect;
-    int32_t           z_index;
-}sprite_t;
-
 typedef struct 
 {
-    sprite_t *sprite;
-    rect_t   dst_rect;
+    vulkan_texture_t *tex;
+    rect_t            src_rect;
+    rect_t            dst_rect;
+    uint32_t          z_index;
 } drawable_t;
 
 typedef struct

@@ -38,6 +38,7 @@ typedef struct
         };
     };
     vec2f_t        dp;
+    int32_t        z_index;
     entity_state_t state;
     entity_type_t  type;
     void           *data;
@@ -45,9 +46,16 @@ typedef struct
 
 typedef struct
 {
-    sprite_t *sprites[MAX_SPRITES_PER_ANIMATION];
-    uint32_t sprite_count;
-    float    duration;
+    vulkan_texture_t *texture;
+    rect_t            src_rect;
+}sprite_t;
+
+typedef struct
+{
+    vulkan_texture_t *texture;
+    rect_t            sprites[MAX_SPRITES_PER_ANIMATION];
+    uint32_t          sprite_count;
+    float             duration;
 }animation_t;
 
 typedef struct 
@@ -58,8 +66,7 @@ typedef struct
     //animation playback
     animation_t *animations[MAX_ANIMATIONS_PER_ENTITY];
     uint32_t    current_animation;
-    uint32_t    current_animation_frame;
-
+    uint32_t    animation_count;
     float       anim_timer;
 }player_t;
 

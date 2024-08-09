@@ -9,7 +9,7 @@
 #include "../game/collision.h"
 #include "../containers/containers.h"
 #include "../memory/memory_arena.h"
-
+#include "../game/animation.h"
 
 #include <math.h>
 
@@ -574,7 +574,8 @@ static VkShaderModule create_shader_module(VkDevice device, const char* filePath
     char *data = memory_arena_push_array(scratch_allocator(), char, fsize);
     assert(data);
     fread(data, 1, fsize, file);
-
+    fclose(file);
+    
     VkShaderModule result;
     VkShaderModuleCreateInfo shaderModule = {};
     shaderModule.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -911,21 +912,21 @@ static int compare_drawables(const void *a, const void *b)
     drawable_t *d1 = (drawable_t*)a;
     drawable_t *d2 = (drawable_t*)b;
 
-    if (d1->sprite->z_index < d2->sprite->z_index) 
+    if (d1->z_index < d2->z_index) 
     {
         return -1;
     }
-    else if (d1->sprite->z_index > d2->sprite->z_index)
+    else if (d1->z_index > d2->z_index)
     {
         return 1;
     }
     else
     {
-        if (d1->sprite->texture < d2->sprite->texture)
+        if (d1->tex < d2->tex)
         {
             return -1;
         }
-        else if (d1->sprite->texture == d2->sprite->texture)
+        else if (d1->tex == d2->tex)
         {
             return 0;
         }
@@ -961,20 +962,23 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
             //rect vs rect against camera
             if (rect_vs_rect(e->rect, camera))
             {
-                sprite_t *sprite = NULL;
+                vulkan_texture_t *tex = NULL;
+                rect_t src_rect = {0};
                 switch(e->type)
                 {
                     case ENTITY_TYPE_PLAYER:
                     {
                         player_t *p = (player_t*)e->data;
                         animation_t *anim = p->animations[p->current_animation];
-                        sprite  = anim->sprites[p->current_animation_frame];
-                        break;     
+                        tex = anim->texture;
+                        src_rect = anim->sprites[animation_get_current_frame(anim, p->anim_timer)];
+                        break;
                     }
                     case ENTITY_TYPE_TILE:
                     {
                         tile_t *tile = (tile_t*)e->data;
-                        sprite = &tile->sprite;
+                        tex = tile->sprite.texture;
+                        src_rect = tile->sprite.src_rect;
                         break;
                     }
                     default: 
@@ -983,10 +987,12 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                 }
 
                 drawable_t *drawable = &drawables[drawable_count++];
-                drawable->sprite   = sprite;
+                drawable->tex = tex;
+                drawable->src_rect = src_rect;
                 drawable->dst_rect = e->rect;
                 drawable->dst_rect.min.x -= camera.min.x + drawable->dst_rect.size.x / 2;
                 drawable->dst_rect.min.y -= camera.min.y + drawable->dst_rect.size.y / 2;
+                drawable->z_index = e->z_index;
             }
         }
     }
@@ -1004,8 +1010,8 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
     {
         drawable_t *drawable = &drawables[i];
         rect_t dst = drawable->dst_rect;
-        rect_t src = drawable->sprite->src_rect;
-        vulkan_texture_t *texture = drawable->sprite->texture;
+        rect_t src = drawable->src_rect;
+        vulkan_texture_t *texture = drawable->tex;
 
         if (renderer->textures[renderer->current_texture] == NULL)
         {

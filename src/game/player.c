@@ -1,33 +1,11 @@
 #include "player.h"
 #include "entity.h"
+#include "animation.h"
+
+#include "../math/math_utils.h"
 
 #include <assert.h>
 #include <SDL2/SDL.h>
-
-static void animate_player(player_t *player, 
-                          float      delta_time, 
-                          uint32_t   anim_index, 
-                          bulk_data_animation_t *animations)
-{
-    //then animate it
-    if (anim_index != player->current_animation)
-    {
-        player->current_animation   = anim_index;
-        player->anim_timer          = 0;
-    }
-    else
-    {
-        player->anim_timer += delta_time;
-    }
-
-    animation_t *playing_animation = bulk_data_getp_raw(animations, player->current_animation);
-
-    if (player->anim_timer >= playing_animation->duration) player->anim_timer -= playing_animation->duration;
-    
-    float sec_per_frame = playing_animation->duration / (float)playing_animation->sprite_count;
-
-    player->current_animation_frame = floorf(player->anim_timer / sec_per_frame);
-}
 
 void update_player(entity_t              *e, 
                    input_t               *input, 
@@ -40,23 +18,24 @@ void update_player(entity_t              *e,
     vec2f_t dp = {0.0f, 0.0f};
     if (input->keyboard_state[SDL_SCANCODE_W])
     {
-        dp.y = -player->velocity;
+        dp.y = -1.0f;
     }
     if (input->keyboard_state[SDL_SCANCODE_S])
     {
-        dp.y = player->velocity;
+        dp.y = 1.0f;
     }
     if (input->keyboard_state[SDL_SCANCODE_A])
     {
-        dp.x = -player->velocity;
+        dp.x = -1.0f;
     }
     if (input->keyboard_state[SDL_SCANCODE_D])
     {
-        dp.x = player->velocity;
+        dp.x = 1.0f;
     }
 
-    dp.x *= delta_time;
-    dp.y *= delta_time;
+    dp = vec2_normalize(dp);
+    dp = vec2_multiply(dp, (vec2f_t){player->velocity * delta_time, 
+                                     player->velocity * delta_time});
 
     uint32_t anim_index = 0;
 
@@ -64,16 +43,16 @@ void update_player(entity_t              *e,
     {
         case(ENTITY_STATE_IDLE):
         {
-            if (dp.x > 0.0f || dp.y > 0.0f)
+            if (dp.x != 0.0f || dp.y != 0.0f)
             {
                 e->state = ENTITY_STATE_RUN;
-                anim_index = 0;
+                anim_index = 1;
             }
             break;
         }
         case(ENTITY_STATE_RUN):
         {
-            anim_index = 0;
+            anim_index = 1;
             if (dp.x == 0.0f && dp.y == 0.0f)
             {
                 e->state = ENTITY_STATE_IDLE;
@@ -86,7 +65,13 @@ void update_player(entity_t              *e,
             break;
     }
 
-    animate_player(player, delta_time, anim_index, animations);
+    player->current_animation = anim_index;
+    player->anim_timer = animation_update(player->animations, 
+                                          player->animation_count, 
+                                          player->current_animation, 
+                                          anim_index, 
+                                          delta_time,
+                                          player->anim_timer);
     //first move the entity
     move_entity(e, dp, entities);
 }

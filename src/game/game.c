@@ -124,6 +124,10 @@ void game_init(game_t *game)
     bulk_data_init(&game->animations, animation_t);
     bulk_data_init(&game->sprites, sprite_t);
 
+    asset_store_add_texture(&game->asset_store, &game->renderer, "knight-run", "./assets/textures/pixel_crawler/Heroes/Knight/Run/Run-Sheet.png");
+    asset_store_add_texture(&game->asset_store, &game->renderer, "knight-idle", "./assets/textures/pixel_crawler/Heroes/Knight/Idle/Idle-Sheet.png");
+    asset_store_add_texture(&game->asset_store, &game->renderer, "dungeon-tiles", "./assets/textures/pixel_crawler/environment/dungeon_prison/assets/tiles.png");
+
     entity_t *player = bulk_data_push_struct(&game->entities);
     player->id   = game->entity_id++;
     player->type = ENTITY_TYPE_PLAYER;
@@ -131,33 +135,37 @@ void game_init(game_t *game)
     player->size = (vec2f_t){64.0f, 64.0f};
     player->dp   = (vec2f_t){0.0f};
     player->data = &game->player_data;
+    player->z_index = 5;
 
     game->player_entity          = player;
     game->player_data.entity     = game->player_entity;
     game->player_data.velocity   = 100.0f;
     game->player_data.anim_timer = 0.0f;
-
-    asset_store_add_texture(&game->asset_store, &game->renderer, "knight-run", "./assets/textures/pixel_crawler/Heroes/Knight/Run/Run-Sheet.png");
-    asset_store_add_texture(&game->asset_store, &game->renderer, "knight-idle", "./assets/textures/pixel_crawler/Heroes/Knight/Idle/Idle-Sheet.png");
-    asset_store_add_texture(&game->asset_store, &game->renderer, "statue", "./assets/textures/statue.jpg");
-
     game->player_data.current_animation = 0;
     game->player_data.anim_timer = 0.0f;
 
     animation_t *animation = bulk_data_push_struct(&game->animations);
-    game->player_data.animations[0] = animation;
+    game->player_data.animations[game->player_data.animation_count++] = animation;
     animation->duration     = 1.0f;
     animation->sprite_count = 0;
-
+    animation->texture  = asset_store_get_texture(&game->asset_store, "knight-idle");
     //now do the sprites
     for (uint32_t i = 0; i < 4; i++)
     {
-        sprite_t *sprite = bulk_data_push_struct(&game->sprites);
-        animation->sprites[animation->sprite_count++] = sprite;
-
-        sprite->texture  = asset_store_get_texture(&game->asset_store, "knight-idle");
-        sprite->src_rect = (rect_t){{i * 32,0},{32,32}};
-        sprite->z_index  = 5;
+        rect_t rect = (rect_t){{i * 32, 0},{32,32}};
+        animation->sprites[animation->sprite_count++] = rect;
+    }
+    
+    animation = bulk_data_push_struct(&game->animations);
+    game->player_data.animations[game->player_data.animation_count++] = animation;
+    animation->duration = 1.0f;
+    animation->sprite_count = 0;
+    animation->texture = asset_store_get_texture(&game->asset_store, "knight-run");
+    //now do the sprites
+    for (uint32_t i = 0; i < 6; i++)
+    {
+        rect_t rect = (rect_t){{i * 64 + 16, 32},{32,32}};
+        animation->sprites[animation->sprite_count++] = rect;
     }
 
     entity_t *tile = bulk_data_push_struct(&game->entities);
@@ -166,11 +174,12 @@ void game_init(game_t *game)
     tile->p    = (vec2f_t){128.0f,128.0f};
     tile->size = (vec2f_t){64.0f, 64.0f};
     tile->dp   = (vec2f_t){0.0f};
+    tile->z_index = 0;
+
     tile_t *tile_data = bulk_data_push_struct(&game->tiles);
     tile_data->entity = tile;
-    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "statue");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{960,720}};
-    tile_data->sprite.z_index  = 0;
+    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
     tile->data = tile_data;
 
     tile = bulk_data_push_struct(&game->entities);
@@ -179,11 +188,12 @@ void game_init(game_t *game)
     tile->p    = (vec2f_t){192.0f,128.0f};
     tile->size = (vec2f_t){64.0f, 64.0f};
     tile->dp   = (vec2f_t){0.0f};
+    tile->z_index = 0;
+
     tile_data = bulk_data_push_struct(&game->tiles);
     tile_data->entity = tile;
-    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "statue");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{960,720}};
-    tile_data->sprite.z_index  = 0;
+    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{64,64}};
     tile->data = tile_data;
 
     tile = bulk_data_push_struct(&game->entities);
@@ -192,11 +202,12 @@ void game_init(game_t *game)
     tile->p    = (vec2f_t){256.0f,128.0f};
     tile->size = (vec2f_t){64.0f, 64.0f};
     tile->dp   = (vec2f_t){0.0f};
+    tile->z_index = 0;
+
     tile_data = bulk_data_push_struct(&game->tiles);
     tile_data->entity = tile;
-    tile_data->sprite.texture = asset_store_get_texture(&game->asset_store, "statue");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{960,720}};
-    tile_data->sprite.z_index  = 0;
+    tile_data->sprite.texture = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
     tile->data = tile_data;
 
     tile = bulk_data_push_struct(&game->entities);
@@ -205,11 +216,12 @@ void game_init(game_t *game)
     tile->p    = (vec2f_t){320.0f,128.0f};
     tile->size = (vec2f_t){64.0f, 64.0f};
     tile->dp   = (vec2f_t){0.0f};
+    tile->z_index  = 0;
+
     tile_data = bulk_data_push_struct(&game->tiles);
     tile_data->entity = tile;
-    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "statue");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{960,720}};
-    tile_data->sprite.z_index  = 0;
+    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
     tile->data = tile_data;
 
     game->performance_freq = SDL_GetPerformanceFrequency();

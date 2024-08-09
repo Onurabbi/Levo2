@@ -17,6 +17,7 @@ vec3f_t vec3_add(vec3f_t a, vec3f_t b);
 float   vec3_dot(vec3f_t a, vec3f_t b);
 vec3f_t vec3_cross(vec3f_t a, vec3f_t b);
 
+vec2f_t vec2_normalize(vec2f_t in);
 vec2f_t vec2_divide(vec2f_t a, vec2f_t b);
 vec2f_t vec2_subtract(vec2f_t a, vec2f_t b);
 vec2f_t vec2_multiply(vec2f_t a, vec2f_t b);
