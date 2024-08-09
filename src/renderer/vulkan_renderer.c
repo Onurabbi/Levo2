@@ -6,8 +6,10 @@
 #include "../logger/logger.h"
 #include "../math/math_utils.h"
 #include "../game/game_types.h"
+#include "../game/collision.h"
 #include "../containers/containers.h"
 #include "../memory/memory_arena.h"
+#include "../game/animation.h"
 
 #include <math.h>
 
@@ -15,6 +17,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
 
@@ -571,7 +574,8 @@ static VkShaderModule create_shader_module(VkDevice device, const char* filePath
     char *data = memory_arena_push_array(scratch_allocator(), char, fsize);
     assert(data);
     fread(data, 1, fsize, file);
-
+    fclose(file);
+    
     VkShaderModule result;
     VkShaderModuleCreateInfo shaderModule = {};
     shaderModule.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -693,8 +697,15 @@ static void create_graphics_pipeline(vulkan_renderer_t *renderer)
     depthStencil.stencilTestEnable = VK_FALSE;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
-    colorBlendAttachment.blendEnable    = VK_FALSE;
-    colorBlendAttachment.colorWriteMask =  VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
+                                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable    = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp        = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -861,10 +872,7 @@ void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window)
         return;
     }
 
-    renderer->vertices = NULL;
-
     renderer->vertex_count = 0;
-    renderer->index_count  = 0;
 
     create_physical_device(renderer);
     create_logical_device(renderer);
@@ -885,11 +893,6 @@ void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window)
     LOGI("Success!");
 }
 
-static void update_vertex_buffer(vulkan_renderer_t *renderer)
-{
-    memcpy(renderer->vertex_buffers[renderer->current_frame].mapped, renderer->vertices, sizeof(vertex_t) * renderer->vertex_count);
-}
-
 /*
     This function assumes that the render commands are sorted by texture
 
@@ -900,98 +903,157 @@ void vulkan_renderer_copy_texture(vulkan_renderer_t *renderer,
                                   rect_t *dst)
 {
     assert(renderer->current_texture < MAX_TEXTURE_COUNT);
-    if (renderer->textures[renderer->current_texture] == NULL)
-    {
-        //write texture and the offset
-        renderer->textures[renderer->current_texture] = texture;
-        renderer->offsets[renderer->current_texture]  = 0;
-    }
-    //if we need to change textures
-    if (renderer->textures[renderer->current_texture] != texture)
-    {
-        renderer->offsets[renderer->current_texture + 1]  = renderer->vertex_count;
-        renderer->textures[renderer->current_texture + 1] = texture;
-        renderer->current_texture++;  
-    }
-
     assert(renderer->vertex_count < MAX_SPRITES_PER_BATCH * 4);
 
-    float half_width = (float)renderer->swapchain_extent.width * 0.5f;
-    float half_height = (float)renderer->swapchain_extent.height * 0.5f;
-
-    float left   = ((float)dst->min.x - half_width) / half_width;
-    float right  = ((float)dst->min.x + (float)dst->size.x - half_width) / half_width;
-    float top    = ((float)dst->min.y - half_height) / half_height;
-    float bottom = ((float)dst->min.y + (float)dst->size.y - half_height) / half_height;
-
-
-    float u  = (float)src->min.x / (float)texture->w;
-    float v  = (float)src->min.y / (float)texture->h;
-    float du = (float)src->size.x / (float)texture->w;
-    float dv = (float)src->size.y / (float)texture->h;
-
-    vertex_t *top_left = &renderer->vertices[renderer->vertex_count++];
-    top_left->pos       = (vec2f_t){left, top};
-    top_left->tex_coord = (vec2f_t){u,v};
-
-    vertex_t *top_right = &renderer->vertices[renderer->vertex_count++];
-    top_right->pos       = (vec2f_t){right, top};
-    top_right->tex_coord = (vec2f_t){u + du, v};
-
-    vertex_t *bottom_right = &renderer->vertices[renderer->vertex_count++];
-    bottom_right->pos       = (vec2f_t){right, bottom};
-    bottom_right->tex_coord = (vec2f_t){u + du, v + dv};
-
-    vertex_t *bottom_left = &renderer->vertices[renderer->vertex_count++];
-    bottom_left->pos         = (vec2f_t){left, bottom};
-    bottom_left->tex_coord   = (vec2f_t){u, v + dv};
-
-    renderer->index_count += 6;
 }
 
-void vulkan_renderer_render_entities(vulkan_renderer_t *renderer, bulk_data_entity_t *entities)
+static int compare_drawables(const void *a, const void *b)
 {
+    drawable_t *d1 = (drawable_t*)a;
+    drawable_t *d2 = (drawable_t*)b;
+
+    if (d1->z_index < d2->z_index) 
+    {
+        return -1;
+    }
+    else if (d1->z_index > d2->z_index)
+    {
+        return 1;
+    }
+    else
+    {
+        if (d1->tex < d2->tex)
+        {
+            return -1;
+        }
+        else if (d1->tex == d2->tex)
+        {
+            return 0;
+        }
+        else
+        {
+            return 1;
+        }
+    }
+}
+
+void vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
+                                     bulk_data_entity_t *entities, 
+                                     bulk_data_animation_t *animations, 
+                                     bulk_data_sprite_t *sprites, 
+                                     rect_t camera)
+{
+    renderer->current_frame   = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    renderer->current_texture = 0;
+    renderer->vertex_count    = 0;
+    memset(renderer->textures, 0, sizeof(renderer->textures));
+    memset(renderer->offsets, 0, sizeof(renderer->offsets));
+
+    drawable_t *drawables = memory_arena_push_array(scratch_allocator(), drawable_t, MAX_SPRITES_PER_BATCH);
+    uint32_t drawable_count = 0;
+
     for (uint32_t i = 0; i < bulk_data_size(entities); i++)
     {
         entity_t *e = bulk_data_getp_null(entities, i);
         if (e)
         {
-            switch(e->type)
+            assert(drawable_count < MAX_SPRITES_PER_BATCH *4);
+
+            //rect vs rect against camera
+            if (rect_vs_rect(e->rect, camera))
             {
-                case ENTITY_TYPE_PLAYER:
+                vulkan_texture_t *tex = NULL;
+                rect_t src_rect = {0};
+                switch(e->type)
                 {
-                    player_t *p = (player_t*)e->data;
-                    vulkan_texture_t *tex = p->sprites[0].texture;
-                    
-                    vulkan_renderer_copy_texture(renderer, tex, &p->sprites[0].src_rect, &e->rect);
-                    break;     
+                    case ENTITY_TYPE_PLAYER:
+                    {
+                        player_t *p = (player_t*)e->data;
+                        animation_t *anim = p->animations[p->current_animation];
+                        tex = anim->texture;
+                        src_rect = anim->sprites[animation_get_current_frame(anim, p->anim_timer)];
+                        break;
+                    }
+                    case ENTITY_TYPE_TILE:
+                    {
+                        tile_t *tile = (tile_t*)e->data;
+                        tex = tile->sprite.texture;
+                        src_rect = tile->sprite.src_rect;
+                        break;
+                    }
+                    default: 
+                        assert(false);
+                        break;
                 }
-                case ENTITY_TYPE_TILE:
-                {
-                    tile_t *tile = (tile_t*)e->data;
-                    vulkan_texture_t *tex = tile->sprite.texture;
-                    vulkan_renderer_copy_texture(renderer, tex, &tile->sprite.src_rect, &e->rect);
-                    break;
-                }
-                default: 
-                    break;
+
+                drawable_t *drawable = &drawables[drawable_count++];
+                drawable->tex = tex;
+                drawable->src_rect = src_rect;
+                drawable->dst_rect = e->rect;
+                drawable->dst_rect.min.x -= camera.min.x + drawable->dst_rect.size.x / 2;
+                drawable->dst_rect.min.y -= camera.min.y + drawable->dst_rect.size.y / 2;
+                drawable->z_index = e->z_index;
             }
         }
     }
-}
 
-void vulkan_renderer_begin(vulkan_renderer_t *renderer)
-{
-    memory_arena_t *scratch_arena = scratch_allocator();
-    memory_arena_begin(scratch_arena);
+    //sort renders
+    qsort(drawables, drawable_count, sizeof(drawables[0]), compare_drawables);
 
-    renderer->vertices = memory_arena_push_size(scratch_arena, MAX_SPRITES_PER_BATCH * 4);
-    renderer->vertex_count = 0;
-    renderer->index_count = 0;
-    renderer->current_frame = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-    renderer->current_texture = 0;
-    memset(renderer->textures, 0, sizeof(renderer->textures));
-    memset(renderer->offsets, 0, sizeof(renderer->offsets));
+    vertex_t *vertices = memory_arena_push_array(scratch_allocator(), vertex_t, MAX_SPRITES_PER_BATCH);
+
+
+    float half_width = (float)renderer->swapchain_extent.width * 0.5f;
+    float half_height = (float)renderer->swapchain_extent.height * 0.5f;
+
+    for (uint32_t i = 0; i < drawable_count; i++)
+    {
+        drawable_t *drawable = &drawables[i];
+        rect_t dst = drawable->dst_rect;
+        rect_t src = drawable->src_rect;
+        vulkan_texture_t *texture = drawable->tex;
+
+        if (renderer->textures[renderer->current_texture] == NULL)
+        {
+            renderer->textures[renderer->current_texture] = texture;
+            renderer->offsets[renderer->current_texture] = 0;
+        }
+
+        if (renderer->textures[renderer->current_texture] != texture)
+        {
+            renderer->offsets[renderer->current_texture + 1]  = renderer->vertex_count;
+            renderer->textures[renderer->current_texture + 1] = texture;
+            renderer->current_texture++;
+        }
+
+        float left   = (dst.min.x - half_width) / half_width;
+        float right  = (dst.min.x + dst.size.x - half_width) / half_width;
+        float top    = (dst.min.y - half_height) / half_height;
+        float bottom = (dst.min.y + dst.size.y - half_height) / half_height;
+
+        float u  = src.min.x / texture->w;
+        float v  = src.min.y / texture->h;
+        float du = src.size.x / texture->w;
+        float dv = src.size.y / texture->h;
+
+        vertex_t *top_left = &vertices[renderer->vertex_count++];
+        top_left->pos       = (vec2f_t){left, top};
+        top_left->tex_coord = (vec2f_t){u,v};
+
+        vertex_t *top_right = &vertices[renderer->vertex_count++];
+        top_right->pos       = (vec2f_t){right, top};
+        top_right->tex_coord = (vec2f_t){u + du, v};
+
+        vertex_t *bottom_right = &vertices[renderer->vertex_count++];
+        bottom_right->pos       = (vec2f_t){right, bottom};
+        bottom_right->tex_coord = (vec2f_t){u + du, v + dv};
+
+        vertex_t *bottom_left = &vertices[renderer->vertex_count++];
+        bottom_left->pos         = (vec2f_t){left, bottom};
+        bottom_left->tex_coord   = (vec2f_t){u, v + dv};
+    }
+    //update vertex buffer
+    memcpy(renderer->vertex_buffers[renderer->current_frame].mapped, vertices, sizeof(vertex_t) * renderer->vertex_count);
 }
 
 void vulkan_renderer_present(vulkan_renderer_t *renderer)
@@ -1027,8 +1089,6 @@ void vulkan_renderer_present(vulkan_renderer_t *renderer)
     renderPassInfo.pClearValues = clearValues;
     vkCmdBeginRenderPass(renderer->command_buffers[renderer->current_frame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(renderer->command_buffers[renderer->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->graphics_pipeline);
-
-    update_vertex_buffer(renderer);
 
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(renderer->command_buffers[renderer->current_frame], 0, 1, &renderer->vertex_buffers[renderer->current_frame].buffer, offsets);

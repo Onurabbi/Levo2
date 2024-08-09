@@ -103,7 +103,6 @@ float vec3_dot(vec3f_t a, vec3f_t b)
     return (a.x * b.x + a.y * b.y + a.z * b.z);
 }
 
-
 vec3f_t vec3_cross(vec3f_t a, vec3f_t b)
 {
     vec3f_t result = {0};
@@ -186,6 +185,18 @@ void perspective(float half_theta, float aspect, float near, float far, mat4f_t 
     mat->m[3][1] = 0;
     mat->m[3][2] = -(2 *far * near) / (far - near);
     mat->m[3][3] = 0;
+}
+
+vec2f_t vec2_normalize(vec2f_t in)
+{
+    vec2f_t result = {0,0};
+    float len = sqrtf(in.x * in.x + in.y * in.y);
+    if (len > EPSILON)
+    {
+        result.x = in.x / len;
+        result.y = in.y / len;
+    }
+    return result;
 }
 
 vec2f_t vec2_divide(vec2f_t v1, vec2f_t v2)

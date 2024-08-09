@@ -3,7 +3,7 @@
 
 #include "vulkan_types.h"
 
-void vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path);
+bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path);
 void vulkan_texture_from_buffer(vulkan_texture_t *texture, 
                                 vulkan_renderer_t *renderer, 
                                 void *pixels, 

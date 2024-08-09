@@ -30,30 +30,19 @@ typedef struct
     VkDescriptorSet descriptor_sets[MAX_FRAMES_IN_FLIGHT];
 }vulkan_texture_t;
 
-typedef struct
+typedef struct 
 {
-    vulkan_texture_t *texture;
+    vulkan_texture_t *tex;
     rect_t            src_rect;
-}sprite_t;
-
-typedef struct
-{
-    sprite_t sprite;
-    rect_t   dest_rect;
-}drawable_t;
+    rect_t            dst_rect;
+    uint32_t          z_index;
+} drawable_t;
 
 typedef struct
 {
     vec2f_t pos;
     vec2f_t tex_coord;
 }vertex_t;
-
-typedef struct
-{
-    _Alignas(16) mat4f_t model;
-    _Alignas(16) mat4f_t view;
-    _Alignas(16) mat4f_t proj;
-}transformations_t;
 
 typedef struct 
 {
@@ -111,17 +100,9 @@ typedef struct
     vulkan_buffer_t vertex_buffers[MAX_FRAMES_IN_FLIGHT];
     vulkan_buffer_t uniform_buffers[MAX_FRAMES_IN_FLIGHT];
 
-    //per frame    
-    vertex_t *vertices;
-    uint32_t  vertex_count;
-    uint32_t  index_count;
-    //per frame
-    sprite_t *sprites;
-    uint32_t  sprite_count;
-
     vulkan_texture_t *textures[MAX_TEXTURE_COUNT];
     uint64_t          offsets[MAX_TEXTURE_COUNT];
-
+    uint32_t          vertex_count;
     uint32_t          current_texture;
 }vulkan_renderer_t;
 

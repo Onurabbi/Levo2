@@ -166,7 +166,6 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     texture->h = h;
     texture->mip_levels = mip_levels;
 
-
     vulkan_buffer_t staging_buffer;
     create_vulkan_buffer(&staging_buffer,
                          renderer, 
@@ -227,8 +226,8 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
 
     VkSamplerCreateInfo samplerInfo = {};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -242,14 +241,14 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     VK_CHECK(vkCreateSampler(renderer->logical_device, &samplerInfo, NULL, &texture->sampler));
 }
 
-void vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path)
+bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path)
 {
     int w,h,channels;
     stbi_uc *pixels = stbi_load(file_path, &w, &h, &channels, STBI_rgb_alpha);
     if (!pixels)
     {
         LOGE("Failed to load image");
-        return;
+        return false;
     }
 
     //uint32_t mip_levels = (uint32_t)floorf(log2f((float)MAX(w,h)));
@@ -257,4 +256,5 @@ void vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *rend
     vulkan_texture_from_buffer(texture,renderer, pixels, w, h, 1);
     stbi_image_free(pixels);
     create_descriptor_sets(texture, renderer);
+    return true;
 }
