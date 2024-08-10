@@ -65,13 +65,13 @@ void update_player(entity_t              *e,
             break;
     }
 
-    player->current_animation = anim_index;
     player->anim_timer = animation_update(player->animations, 
                                           player->animation_count, 
                                           player->current_animation, 
                                           anim_index, 
                                           delta_time,
                                           player->anim_timer);
+    player->current_animation = anim_index;
     //first move the entity
     move_entity(e, dp, entities);
 }
