@@ -8,6 +8,8 @@
 
 #include "../logger/logger.h"
 #include "../memory/memory_arena.h"
+#include "../cJSON/cJSON.h"
+#include "../containers/string.h"
 
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -17,12 +19,260 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
+static void load_level(game_t *game, const char *data_file_path)
+{
+    FILE *file = fopen(data_file_path, "r");
+    if (!file)
+    {
+        LOGE("Unable to load %s\n", data_file_path);
+        return;
+    }
+
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    char *file_buf = memory_arena_push_array(scratch_allocator(), char, file_size + 1);
+    assert(file_buf);
+
+    fread(file_buf, 1, file_size, file);
+    file_buf[file_size] = '\0';
+    fclose(file);
+
+    cJSON *root = cJSON_Parse(file_buf);
+    if (!root)
+    {
+        LOGE("Unable to parse json file");
+        return;
+    }
+
+    //! NOTE: Load assets
+    cJSON *assets = cJSON_GetObjectItem(root, "assets");
+    if (assets)
+    {
+        cJSON *file_paths = cJSON_GetObjectItem(assets, "filepaths");
+        if (file_paths)
+        {
+            cJSON *pair;
+            cJSON_ArrayForEach(pair, file_paths)
+            {
+                const char *key = string_duplicate(cJSON_GetStringValue(cJSON_GetObjectItem(pair, "key")));
+                const char *value = string_duplicate(cJSON_GetStringValue(cJSON_GetObjectItem(pair, "value")));
+
+                if (key && value)
+                {
+                    LOGI("key: %s value: %s", key, value);
+                    asset_store_add_texture(&game->asset_store, &game->renderer, key, value);
+                }
+                else
+                {
+                    LOGE("Unable to parse key value pair");
+                }
+            }
+        }
+        else
+        {
+            LOGE("Unable to parse file paths");
+            goto exit;
+        }
+    }
+    else
+    {
+        LOGE("Unable to parse assets node");
+        goto exit;
+    }
+
+    //! NOTE: Load Entities
+    cJSON *entities = cJSON_GetObjectItem(root, "entities");
+    if (entities)
+    {
+        //! Load the player
+        cJSON* player_node = cJSON_GetObjectItem(entities, "player");
+        if (player_node)
+        {
+            entity_t *player_entity = bulk_data_push_struct(&game->entities);
+            player_t *player = &game->player_data;
+
+            game->player_entity = player_entity;
+            player_entity->data = player;
+
+            player_entity->id = game->entity_id++;
+            player_entity->type = ENTITY_TYPE_PLAYER;
+            player_entity->dp = (vec2f_t){0.0f, 0.0f};
+
+            cJSON *node = NULL;
+            node = cJSON_GetObjectItem(player_node, "position");
+            player_entity->p.x = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(node, "x"));
+            player_entity->p.y = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(node, "y"));
+
+            node = cJSON_GetObjectItem(player_node, "size");
+            player_entity->size.x = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(node, "x"));
+            player_entity->size.y = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(node, "y"));
+            player_entity->z_index = (int32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(player_node, "z_index"));
+
+            player->entity = player_entity;
+            player->velocity = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(player_node, "velocity"));
+
+            cJSON *child = NULL;
+            node = cJSON_GetObjectItem(player_node, "animations");
+            cJSON_ArrayForEach(child, node)
+            {
+                animation_t *animation = bulk_data_push_struct(&game->animations);
+                player->animations[player->animation_count++] = animation;
+                const char *texture_id = cJSON_GetStringValue(cJSON_GetObjectItem(child, "texture"));
+                animation->texture = asset_store_get_texture(&game->asset_store, texture_id);
+                animation->duration = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(child, "duration"));
+                animation->sprite_count = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(child, "sprite_count"));
+
+                cJSON *grand_child = cJSON_GetObjectItem(child, "offset");
+                uint32_t offset_x = cJSON_GetNumberValue(cJSON_GetObjectItem(grand_child, "x"));
+                uint32_t offset_y = cJSON_GetNumberValue(cJSON_GetObjectItem(grand_child, "y"));
+
+                grand_child = cJSON_GetObjectItem(child, "size");
+                float w = cJSON_GetNumberValue(cJSON_GetObjectItem(grand_child, "x"));
+                float h = cJSON_GetNumberValue(cJSON_GetObjectItem(grand_child, "y"));
+                uint32_t stride = cJSON_GetNumberValue(cJSON_GetObjectItem(child, "stride"));
+
+                for (uint32_t i = 0; i < animation->sprite_count; i++)
+                {
+                    animation->sprites[i] = (rect_t){{offset_x + i * stride, offset_y}, {w,h}};
+                }
+            }
+        }
+        else
+        {
+            LOGE("NOOOO");
+        }
+
+        //! Load tiles
+        cJSON *tiles = cJSON_GetObjectItem(root, "tilemap");
+        if (tiles)
+        {
+            const char *map_file_path = cJSON_GetStringValue(cJSON_GetObjectItem(tiles, "map_file"));
+            if (!map_file_path)
+            {
+                LOGE("NOOOOO");
+                goto exit;
+            }
+
+            FILE *map_file = fopen(map_file_path, "r");
+            if (!map_file)
+            {
+                LOGE("NOOOOOOOOOO");
+                goto exit;
+            }
+
+            uint32_t rows  = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(tiles, "row_count"));
+            uint32_t cols  = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(tiles, "col_count"));
+            uint32_t tile_size = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(tiles, "tile_size"));
+            float scale = (float)cJSON_GetNumberValue(cJSON_GetObjectItem(tiles, "scale"));
+            
+            const char *texture_path = cJSON_GetStringValue(cJSON_GetObjectItem(tiles, "texture"));
+            vulkan_texture_t *tiletex = asset_store_get_texture(&game->asset_store, texture_path);
+            assert(tiletex);
+
+            for (uint32_t row = 0; row < rows; row++)
+            {
+                for (uint32_t col = 0; col < cols; col++)
+                {
+                    int tile_row = fgetc(map_file) - '0';
+                    int tile_col = fgetc(map_file) - '0';
+                    if (tile_row == EOF || tile_col == EOF)
+                    {
+                        LOGE("NOOOOOO");
+                        fclose(map_file);
+                        goto exit;
+                    }
+
+                    fgetc(map_file);
+                }
+                fgetc(map_file);
+            }
+        }
+        else
+        {
+            LOGE("NOOOOOO");
+        }
+    }
+    else
+    {
+        LOGE("Unable to parse entities node");
+        goto exit;
+    }
+exit:
+    cJSON_Delete(root);
+}
 
 static void setup(game_t *game)
 {
+    load_level(game, "./assets/data/level1.json");
+
+    entity_t *tile = bulk_data_push_struct(&game->entities);
+    tile->id   = game->entity_id++;
+    tile->type = ENTITY_TYPE_TILE;
+    tile->p    = (vec2f_t){128.0f,128.0f};
+    tile->size = (vec2f_t){64.0f, 64.0f};
+    tile->dp   = (vec2f_t){0.0f};
+    tile->z_index = 0;
+
+    tile_t *tile_data = bulk_data_push_struct(&game->tiles);
+    tile_data->entity = tile;
+    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-prison-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
+    tile->data = tile_data;
+
+    tile = bulk_data_push_struct(&game->entities);
+    tile->id   = game->entity_id++;
+    tile->type = ENTITY_TYPE_TILE;
+    tile->p    = (vec2f_t){192.0f,128.0f};
+    tile->size = (vec2f_t){64.0f, 64.0f};
+    tile->dp   = (vec2f_t){0.0f};
+    tile->z_index = 0;
+
+    tile_data = bulk_data_push_struct(&game->tiles);
+    tile_data->entity = tile;
+    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-prison-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{64,64}};
+    tile->data = tile_data;
+
+    tile = bulk_data_push_struct(&game->entities);
+    tile->id   = game->entity_id++;
+    tile->type = ENTITY_TYPE_TILE;
+    tile->p    = (vec2f_t){256.0f,128.0f};
+    tile->size = (vec2f_t){64.0f, 64.0f};
+    tile->dp   = (vec2f_t){0.0f};
+    tile->z_index = 0;
+
+    tile_data = bulk_data_push_struct(&game->tiles);
+    tile_data->entity = tile;
+    tile_data->sprite.texture = asset_store_get_texture(&game->asset_store, "dungeon-prison-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
+    tile->data = tile_data;
+
+    tile = bulk_data_push_struct(&game->entities);
+    tile->id   = game->entity_id++;
+    tile->type = ENTITY_TYPE_TILE;
+    tile->p    = (vec2f_t){320.0f,128.0f};
+    tile->size = (vec2f_t){64.0f, 64.0f};
+    tile->dp   = (vec2f_t){0.0f};
+    tile->z_index  = 0;
+
+    tile_data = bulk_data_push_struct(&game->tiles);
+    tile_data->entity = tile;
+    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-prison-tiles");
+    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
+    tile->data = tile_data;
+
+    game->performance_freq = SDL_GetPerformanceFrequency();
+    game->previous_counter = SDL_GetPerformanceCounter();
+
+    game->camera.size.x = WINDOW_WIDTH;
+    game->camera.size.y = WINDOW_HEIGHT;
+    game->camera.min.x  = game->player_entity->p.x - WINDOW_WIDTH / 2;
+    game->camera.min.y  = game->player_entity->p.y - WINDOW_HEIGHT / 2;
+
     LOGI("Setup complete");
 }
-
 
 static void update(game_t *game)
 {
@@ -123,114 +373,6 @@ void game_init(game_t *game)
     bulk_data_init(&game->tiles, tile_t);
     bulk_data_init(&game->animations, animation_t);
     bulk_data_init(&game->sprites, sprite_t);
-
-    asset_store_add_texture(&game->asset_store, &game->renderer, "knight-run", "./assets/textures/pixel_crawler/Heroes/Knight/Run/Run-Sheet.png");
-    asset_store_add_texture(&game->asset_store, &game->renderer, "knight-idle", "./assets/textures/pixel_crawler/Heroes/Knight/Idle/Idle-Sheet.png");
-    asset_store_add_texture(&game->asset_store, &game->renderer, "dungeon-tiles", "./assets/textures/pixel_crawler/environment/dungeon_prison/assets/tiles.png");
-
-    entity_t *player = bulk_data_push_struct(&game->entities);
-    player->id   = game->entity_id++;
-    player->type = ENTITY_TYPE_PLAYER;
-    player->p    = (vec2f_t){0.0f};
-    player->size = (vec2f_t){64.0f, 64.0f};
-    player->dp   = (vec2f_t){0.0f};
-    player->data = &game->player_data;
-    player->z_index = 5;
-
-    game->player_entity          = player;
-    game->player_data.entity     = game->player_entity;
-    game->player_data.velocity   = 100.0f;
-    game->player_data.anim_timer = 0.0f;
-    game->player_data.current_animation = 0;
-    game->player_data.anim_timer = 0.0f;
-
-    animation_t *animation = bulk_data_push_struct(&game->animations);
-    game->player_data.animations[game->player_data.animation_count++] = animation;
-    animation->duration     = 1.0f;
-    animation->sprite_count = 0;
-    animation->texture  = asset_store_get_texture(&game->asset_store, "knight-idle");
-    //now do the sprites
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        rect_t rect = (rect_t){{i * 32, 0},{32,32}};
-        animation->sprites[animation->sprite_count++] = rect;
-    }
-    
-    animation = bulk_data_push_struct(&game->animations);
-    game->player_data.animations[game->player_data.animation_count++] = animation;
-    animation->duration = 1.0f;
-    animation->sprite_count = 0;
-    animation->texture = asset_store_get_texture(&game->asset_store, "knight-run");
-    //now do the sprites
-    for (uint32_t i = 0; i < 6; i++)
-    {
-        rect_t rect = (rect_t){{i * 64 + 16, 32},{32,32}};
-        animation->sprites[animation->sprite_count++] = rect;
-    }
-
-    entity_t *tile = bulk_data_push_struct(&game->entities);
-    tile->id   = game->entity_id++;
-    tile->type = ENTITY_TYPE_TILE;
-    tile->p    = (vec2f_t){128.0f,128.0f};
-    tile->size = (vec2f_t){64.0f, 64.0f};
-    tile->dp   = (vec2f_t){0.0f};
-    tile->z_index = 0;
-
-    tile_t *tile_data = bulk_data_push_struct(&game->tiles);
-    tile_data->entity = tile;
-    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
-    tile->data = tile_data;
-
-    tile = bulk_data_push_struct(&game->entities);
-    tile->id   = game->entity_id++;
-    tile->type = ENTITY_TYPE_TILE;
-    tile->p    = (vec2f_t){192.0f,128.0f};
-    tile->size = (vec2f_t){64.0f, 64.0f};
-    tile->dp   = (vec2f_t){0.0f};
-    tile->z_index = 0;
-
-    tile_data = bulk_data_push_struct(&game->tiles);
-    tile_data->entity = tile;
-    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{64,64}};
-    tile->data = tile_data;
-
-    tile = bulk_data_push_struct(&game->entities);
-    tile->id   = game->entity_id++;
-    tile->type = ENTITY_TYPE_TILE;
-    tile->p    = (vec2f_t){256.0f,128.0f};
-    tile->size = (vec2f_t){64.0f, 64.0f};
-    tile->dp   = (vec2f_t){0.0f};
-    tile->z_index = 0;
-
-    tile_data = bulk_data_push_struct(&game->tiles);
-    tile_data->entity = tile;
-    tile_data->sprite.texture = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
-    tile->data = tile_data;
-
-    tile = bulk_data_push_struct(&game->entities);
-    tile->id   = game->entity_id++;
-    tile->type = ENTITY_TYPE_TILE;
-    tile->p    = (vec2f_t){320.0f,128.0f};
-    tile->size = (vec2f_t){64.0f, 64.0f};
-    tile->dp   = (vec2f_t){0.0f};
-    tile->z_index  = 0;
-
-    tile_data = bulk_data_push_struct(&game->tiles);
-    tile_data->entity = tile;
-    tile_data->sprite.texture  = asset_store_get_texture(&game->asset_store, "dungeon-tiles");
-    tile_data->sprite.src_rect = (rect_t){{0,0},{32,32}};
-    tile->data = tile_data;
-
-    game->performance_freq = SDL_GetPerformanceFrequency();
-    game->previous_counter = SDL_GetPerformanceCounter();
-
-    game->camera.size.x = WINDOW_WIDTH;
-    game->camera.size.y = WINDOW_HEIGHT;
-    game->camera.min.x  = player->p.x - WINDOW_WIDTH / 2;
-    game->camera.min.y  = player->p.y - WINDOW_HEIGHT / 2;
 
     game->is_running = true;
 }
