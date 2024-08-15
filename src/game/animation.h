@@ -3,6 +3,7 @@
 
 #include "game_types.h"
 
+vec2f_t animation_get_current_weapon_socket(animation_t *animation, weapon_slot_t slot, float timer);
 uint32_t animation_get_current_frame(animation_t *animation, float timer);
 float animation_update(animation_t **animations,
                        uint32_t      animation_count,

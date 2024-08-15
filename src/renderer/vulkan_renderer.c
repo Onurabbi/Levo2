@@ -20,6 +20,8 @@
 #include <stdlib.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
+#define TILE_WIDTH 64
+#define TILE_HEIGHT 64
 
 static void create_vulkan_instance(vulkan_renderer_t *renderer, SDL_Window *window)
 {
@@ -690,8 +692,8 @@ static void create_graphics_pipeline(vulkan_renderer_t *renderer)
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.pNext = NULL;
     depthStencil.flags = 0;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
@@ -863,7 +865,7 @@ static void create_descriptor_pool(vulkan_renderer_t *renderer)
     VK_CHECK(vkCreateDescriptorPool(renderer->logical_device, &poolInfo, NULL, &renderer->descriptor_pool));
 }
 
-void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window)
+void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float tile_width, float tile_height)
 {
     create_vulkan_instance(renderer, window);
     if (!SDL_Vulkan_CreateSurface(window, renderer->instance, &renderer->surface))
@@ -880,6 +882,7 @@ void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window)
     create_command_pool(renderer);
     allocate_command_buffers(renderer);
     create_sync_primitives(renderer);
+    //! NOTE: remove this
     setup_depth_stencil(renderer);
     create_render_pass(renderer);
     create_framebuffers(renderer);
@@ -971,7 +974,8 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                         player_t *p = (player_t*)e->data;
                         animation_t *anim = p->animations[p->current_animation];
                         tex = anim->texture;
-                        src_rect = anim->sprites[animation_get_current_frame(anim, p->anim_timer)];
+                        uint32_t current_frame = animation_get_current_frame(anim, p->anim_timer);
+                        src_rect = anim->sprites[current_frame];
                         break;
                     }
                     case ENTITY_TYPE_TILE:
@@ -979,6 +983,13 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                         tile_t *tile = (tile_t*)e->data;
                         tex = tile->sprite.texture;
                         src_rect = tile->sprite.src_rect;
+                        break;
+                    }
+                    case ENTITY_TYPE_WEAPON:
+                    {
+                        weapon_t *weapon = (weapon_t*)e->data;
+                        tex = weapon->sprite.texture;
+                        src_rect = weapon->sprite.src_rect;
                         break;
                     }
                     default: 
@@ -990,8 +1001,8 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                 drawable->tex = tex;
                 drawable->src_rect = src_rect;
                 drawable->dst_rect = e->rect;
-                drawable->dst_rect.min.x -= camera.min.x + drawable->dst_rect.size.x / 2;
-                drawable->dst_rect.min.y -= camera.min.y + drawable->dst_rect.size.y / 2;
+                drawable->dst_rect.min.x -= camera.min.x + TILE_WIDTH / 2;
+                drawable->dst_rect.min.y -= camera.min.y + TILE_HEIGHT / 2;
                 drawable->z_index = e->z_index;
             }
         }
@@ -1001,7 +1012,6 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
     qsort(drawables, drawable_count, sizeof(drawables[0]), compare_drawables);
 
     vertex_t *vertices = memory_arena_push_array(scratch_allocator(), vertex_t, MAX_SPRITES_PER_BATCH);
-
 
     float half_width = (float)renderer->swapchain_extent.width * 0.5f;
     float half_height = (float)renderer->swapchain_extent.height * 0.5f;
@@ -1076,7 +1086,7 @@ void vulkan_renderer_present(vulkan_renderer_t *renderer)
     VK_CHECK(vkBeginCommandBuffer(renderer->command_buffers[renderer->current_frame], &beginInfo));
 
     VkClearValue clearValues[2];
-    clearValues[0].color = (VkClearColorValue){{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[0].color = (VkClearColorValue){{1.0f, 0.0f, 1.0f, 1.0f}};
     clearValues[1].depthStencil = (VkClearDepthStencilValue){1.0f, 0};
 
     VkRenderPassBeginInfo renderPassInfo = {};

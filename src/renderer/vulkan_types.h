@@ -104,6 +104,10 @@ typedef struct
     uint64_t          offsets[MAX_TEXTURE_COUNT];
     uint32_t          vertex_count;
     uint32_t          current_texture;
+
+    float tile_width;
+    float tile_height;
+    
 }vulkan_renderer_t;
 
 BulkDataTypes(vulkan_texture_t)

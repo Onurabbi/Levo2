@@ -34,7 +34,8 @@ void move_entity(entity_t *e, vec2f_t dp, bulk_data_entity_t *bd)
         if (other)
         {
             if (other == e) continue;
-
+            if ((other->flags & ENTITY_CAN_COLLIDE) == 0) continue;
+            
             vec2f_t contact_normal, contact_position;
             float time;
             if (resolve_dyn_rect_vs_rect(e->rect, other->rect, dp, &contact_position, &contact_normal, &time))
