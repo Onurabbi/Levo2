@@ -6,7 +6,7 @@
 
 #include <SDL2/SDL.h>
 
-void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window);
+void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float tile_width, float tile_height);
 void vulkan_renderer_present(vulkan_renderer_t *renderer);
 void vulkan_renderer_copy_texture(vulkan_renderer_t *renderer, 
                                   vulkan_texture_t *texture,

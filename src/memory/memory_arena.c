@@ -6,10 +6,16 @@
 #define SCRATCH_MEMORY_SIZE MEGABYTES(256)
 
 static memory_arena_t scratch_arena = {0};
+static memory_arena_t string_arena = {0};
 
 memory_arena_t *scratch_allocator(void)
 {
     return &scratch_arena;
+}
+
+memory_arena_t *string_allocator(void)
+{
+    return &string_arena;
 }
 
 void memory_arena_init(void)
@@ -23,6 +29,16 @@ void memory_arena_init(void)
     assert(scratch_arena.base);
     scratch_arena.capacity = SCRATCH_MEMORY_SIZE;
     scratch_arena.used     = 0;
+
+    string_arena.base = mmap(0, 
+                         SCRATCH_MEMORY_SIZE,
+                         PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS,
+                         -1,
+                         0);
+    assert(string_arena.base);
+    string_arena.capacity = SCRATCH_MEMORY_SIZE;
+    string_arena.used     = 0;
 }
 
 void memory_arena_begin(memory_arena_t *arena)

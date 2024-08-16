@@ -1,6 +1,13 @@
 #include "animation.h"
+#include "game_types.h"
 #include <assert.h>
 #include <math.h>
+
+vec2f_t animation_get_current_weapon_socket(animation_t *animation, weapon_slot_t socket, float timer)
+{
+    uint32_t current_frame = animation_get_current_frame(animation,timer);
+    return animation->weapon_sockets[socket][current_frame];
+}
 
 uint32_t animation_get_current_frame(animation_t *animation, float timer)
 {
