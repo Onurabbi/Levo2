@@ -79,7 +79,6 @@ typedef struct
     rect_t            sprites[MAX_SPRITES_PER_ANIMATION];
 
     vec2f_t           weapon_sockets[2][MAX_SPRITES_PER_ANIMATION];// offset of the weapon socket from entity top-left position 
-    //vec2f_t           shield_sockets[MAX_SPRITES_PER_ANIMATION];
 
     uint32_t          sprite_count;
     float             duration;
