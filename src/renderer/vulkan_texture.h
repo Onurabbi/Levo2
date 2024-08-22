@@ -9,6 +9,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
                                 void *pixels, 
                                 uint32_t w, 
                                 uint32_t h, 
+                                uint32_t channels,
                                 uint32_t mip_levels);
 #endif
 

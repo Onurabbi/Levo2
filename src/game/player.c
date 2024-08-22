@@ -10,8 +10,7 @@
 void update_player(entity_t              *e, 
                    input_t               *input, 
                    float                  delta_time, 
-                   bulk_data_entity_t    *entities,
-                   bulk_data_animation_t *animations)
+                   bulk_data_entity_t    *entities)
 {
     player_t *player = (player_t*)e->data;
 
@@ -37,8 +36,6 @@ void update_player(entity_t              *e,
     dp = vec2_multiply(dp, (vec2f_t){player->velocity * delta_time, 
                                      player->velocity * delta_time});
 
-    uint32_t anim_index = 0;
-
     switch (e->state)
     {
         case(ENTITY_STATE_IDLE):
@@ -46,17 +43,14 @@ void update_player(entity_t              *e,
             if (dp.x != 0.0f || dp.y != 0.0f)
             {
                 e->state = ENTITY_STATE_RUN;
-                anim_index = 1;
             }
             break;
         }
         case(ENTITY_STATE_RUN):
         {
-            anim_index = 1;
             if (dp.x == 0.0f && dp.y == 0.0f)
             {
                 e->state = ENTITY_STATE_IDLE;
-                anim_index = 0;
             }
             break;
         }
@@ -65,13 +59,16 @@ void update_player(entity_t              *e,
             break;
     }
 
-    player->anim_timer = animation_update(player->animations, 
-                                          player->animation_count, 
-                                          player->current_animation, 
-                                          anim_index, 
-                                          delta_time,
-                                          player->anim_timer);
-    player->current_animation = anim_index;
+    animation_update_result_t update_result = {0};
+    update_result = animation_update(player->animation_chunks, 
+                                     player->animation_chunk_count, 
+                                     player->current_animation, 
+                                     e->state, 
+                                     delta_time,
+                                     player->anim_timer);
+    player->current_animation = update_result.animation;
+    player->anim_timer = update_result.timer;
+    
     //first move the entity
     move_entity(e, dp, entities);
 }

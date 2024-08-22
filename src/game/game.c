@@ -34,20 +34,42 @@ entity_type_from_string(const char *str)
     return ENTITY_TYPE_UNKNOWN;
 }
 
-static void load_animations_from_json(game_t *game, 
-                                      cJSON *node, 
-                                      animation_t **animations, 
-                                      uint32_t *animation_count, 
-                                      uint32_t animation_capacity, 
-                                      vec2f_t entity_size)
+//! NOTE: Text should be on permanent storage
+static void add_text_to_render(game_t *game, const char *text, font_t *font, vec2f_t p)
 {
-    uint32_t count = 0;
+
+}
+
+static uint32_t load_animations_from_json(game_t             *game, 
+                                          cJSON              *node, 
+                                          animation_chunk_t **animation_chunks, 
+                                          uint32_t            animation_chunk_capacity, 
+                                          vec2f_t             entity_size)
+{
+    uint32_t chunk_count = 0;
     cJSON *child = NULL;
+
     cJSON_ArrayForEach(child, node)
     {
-        animation_t *animation = bulk_data_push_struct(&game->animations);
-        animations[count++] = animation;
-        assert(count <= animation_capacity && "Unable to add more animations");
+        animation_chunk_t *current_chunk = animation_chunks[chunk_count];
+        if (!current_chunk)
+        {
+            current_chunk = bulk_data_push_struct(&game->animation_chunks);
+            current_chunk->count = 0;
+            animation_chunks[chunk_count++] = current_chunk;
+        }
+        else if (current_chunk->count == MAX_ANIMATIONS_PER_CHUNK)
+        {
+            current_chunk = bulk_data_push_struct(&game->animation_chunks);
+            current_chunk->count = 0;
+            animation_chunks[chunk_count++] = current_chunk;
+        }
+
+        animation_t *animation = &current_chunk->animations[current_chunk->count++];
+
+        assert(chunk_count <= animation_chunk_capacity && "Unable to add more animations");
+        const char *state_str = cJSON_GetStringValue(cJSON_GetObjectItem(child, "state"));
+        animation->state = get_animation_state_from_string(state_str);
 
         const char *texture_id = cJSON_GetStringValue(cJSON_GetObjectItem(child, "texture"));
         animation->texture = asset_store_get_texture(&game->asset_store, texture_id);
@@ -67,22 +89,8 @@ static void load_animations_from_json(game_t *game,
         {
             animation->sprites[i] = (rect_t){{offset_x + i * stride, offset_y}, {w,h}};
         }
-
-        float scale = entity_size.x / w;
-        grand_child = cJSON_GetObjectItem(child, "weapon_offsets");
-        cJSON *grand_grand_child = NULL;
-        uint32_t i = 0;
-        cJSON_ArrayForEach(grand_grand_child, grand_child)
-        {
-            float weapon_offset_x = cJSON_GetNumberValue(cJSON_GetObjectItem(grand_grand_child, "x"));
-            float weapon_offset_y = cJSON_GetNumberValue(cJSON_GetObjectItem(grand_grand_child, "y"));
-
-            animation->weapon_sockets[i / animation->sprite_count][i%animation->sprite_count] = (vec2f_t){weapon_offset_x * scale, weapon_offset_y * scale};
-            i++;
-        }        
     }
-
-    *animation_count = count;
+    return chunk_count;
 }
 
 static void load_entities_from_json(game_t *game, cJSON *root)
@@ -129,7 +137,12 @@ static void load_entities_from_json(game_t *game, cJSON *root)
                 entity->flags = ENTITY_CAN_COLLIDE;
 
                 cJSON *anim_node = cJSON_GetObjectItem(entity_node, "animations");
-                load_animations_from_json(game, anim_node, player->animations, &player->animation_count, MAX_ANIMATIONS_PER_ENTITY, entity->size);
+                player->animation_chunk_count = load_animations_from_json(game, 
+                                                                          anim_node, 
+                                                                          player->animation_chunks,  
+                                                                          MAX_ANIMATION_CHUNKS_PER_ENTITY, 
+                                                                          entity->size);
+                player->current_animation = &player->animation_chunks[0]->animations[0];
                 break;
             }
             case ENTITY_TYPE_WEAPON:
@@ -155,15 +168,6 @@ static void load_entities_from_json(game_t *game, cJSON *root)
                 weapon->sprite.src_rect.min.y = py;
                 weapon->sprite.src_rect.size.x = sx;
                 weapon->sprite.src_rect.size.y = sy;
-                
-                float scale = entity->size.x / sx;
-
-                cJSON *weapon_handle_offset_node = cJSON_GetObjectItem(entity_node, "weapon_offset");
-                
-                weapon->offset.x = cJSON_GetNumberValue(cJSON_GetObjectItem(weapon_handle_offset_node, "x"));
-                weapon->offset.y = cJSON_GetNumberValue(cJSON_GetObjectItem(weapon_handle_offset_node, "y"));
-                weapon->offset.x *= scale;
-                weapon->offset.y *= scale;
 
                 if (strcmp(entity_type, "weapon") == 0)
                 {
@@ -256,6 +260,21 @@ static void load_tiles_from_json(game_t *game, cJSON *root)
         }
         fgetc(map_file);
     }
+
+    //create tile entity
+    entity_t *tile_entity = bulk_data_push_struct(&game->entities);
+    tile_entity->id = game->entity_id++;
+    tile_entity->type = ENTITY_TYPE_TILE;
+    tile_entity->p = (vec2f_t){512,512};
+    tile_entity->size = (vec2f_t){13, 24};
+    tile_entity->z_index = 5;
+
+    tile_t *tile_data = bulk_data_push_struct(&game->tiles);
+    tile_data->entity = tile_entity;
+    tile_data->sprite.texture = asset_store_get_texture(&game->asset_store, "liberation-mono-regular-24");
+    assert(tile_data->sprite.texture);
+    tile_data->sprite.src_rect = (rect_t){{416,0},{13,24}};
+    tile_entity->data = tile_data;
 }
 
 static char *read_whole_file(const char *file_path)
@@ -286,7 +305,7 @@ static void load_assets_from_json(game_t *game, cJSON *root)
     cJSON *assets = cJSON_GetObjectItem(root, "assets");
     if (assets)
     {
-        cJSON *file_paths = cJSON_GetObjectItem(assets, "filepaths");
+        cJSON *file_paths = cJSON_GetObjectItem(assets, "textures");
         if (file_paths)
         {
             cJSON *pair;
@@ -308,8 +327,42 @@ static void load_assets_from_json(game_t *game, cJSON *root)
         }
         else
         {
-            LOGE("Unable to parse file paths");
+            LOGE("Unable to parse texture file paths");
             return;
+        }
+
+        uint32_t glyph_count = 0;
+        
+        cJSON *fonts = cJSON_GetObjectItem(assets, "fonts");
+        if (fonts)
+        {
+            cJSON *font = NULL;
+            cJSON_ArrayForEach(font, fonts)
+            {
+                float width = cJSON_GetNumberValue(cJSON_GetObjectItem(font, "width"));
+                float height = cJSON_GetNumberValue(cJSON_GetObjectItem(font, "height"));
+
+                const char *file_name = cJSON_GetStringValue(cJSON_GetObjectItem(font, "vertices"));
+                char *buf = read_whole_file(file_name);
+                char *tok = strtok(buf, ",");
+                while(tok)
+                {
+                    float x = strtof(tok, NULL);
+                    tok = strtok(NULL, ",");
+                    float y = strtof(tok, NULL);
+                    tok = strtok(NULL, ",");
+                    float dx = strtof(tok, NULL);
+                    tok = strtok(NULL, ",");
+                    float dy = strtof(tok, NULL);
+                    tok = strtok(NULL, ",");
+
+                    rect_t *glyph = &game->font.glyphs[glyph_count++];
+                    glyph->min.x  = x;
+                    glyph->min.y  = y;
+                    glyph->size.x = dx;
+                    glyph->size.y = dy; 
+                }
+            }
         }
     }
     else
@@ -374,7 +427,9 @@ static void update(game_t *game)
 
     while (game->accumulator > 1.0 / 61.0)
     {
-        uint64_t before = SDL_GetPerformanceCounter();
+        //reset all text
+        game->visible_text_count = 0;
+
         //update all entities
         for (uint32_t i = 0; i < bulk_data_size(&game->entities); i++)
         {
@@ -385,22 +440,12 @@ static void update(game_t *game)
                 {
                     case(ENTITY_TYPE_PLAYER):
                     {
-                        update_player(e, &game->input, DELTA_TIME, &game->entities, &game->animations);
+                        update_player(e, &game->input, DELTA_TIME, &game->entities);
                         break;
                     }
                     case(ENTITY_TYPE_WEAPON):
                     {
                         e->p = game->player_entity->p;
-
-                        weapon_t *weapon = e->data;
-                        player_t *player = &game->player_data;
-                        animation_t *current_animation = player->animations[player->current_animation];
-                        vec2f_t weapon_socket_offset = animation_get_current_weapon_socket(current_animation, weapon->slot, player->anim_timer);
-
-                        //weapon handle offset should match weapon socket
-                        vec2f_t weapon_offset = vec2_subtract(weapon_socket_offset, weapon->offset);
-                        e->p = vec2_add(e->p, weapon_offset);
-
                         break;
                     }
                     default: 
@@ -408,10 +453,8 @@ static void update(game_t *game)
                 }
             }
         }
-        uint64_t after = SDL_GetPerformanceCounter();
-        elapsed = after - before;
-        sec = (double)elapsed / game->performance_freq;
-        //LOGI("Entity updates took :%lf seconds", sec);
+
+        //add some text to render
 
         //update camera location
         game->camera.min.x = game->player_entity->p.x + game->player_entity->size.x / 2 - game->camera.size.x / 2;
@@ -425,8 +468,7 @@ static void update(game_t *game)
 
 static void render(game_t *game)
 {
-    vulkan_renderer_render_entities(&game->renderer, &game->entities, &game->animations, &game->sprites, game->camera);
-    vulkan_renderer_present(&game->renderer);
+    vulkan_renderer_render(&game->renderer, game);
 }
 
 void game_run(game_t *game)
@@ -471,7 +513,7 @@ void game_init(game_t *game)
     bulk_data_init(&game->entities, entity_t);
     bulk_data_init(&game->tiles, tile_t);
     bulk_data_init(&game->weapons, weapon_t);
-    bulk_data_init(&game->animations, animation_t);
+    bulk_data_init(&game->animation_chunks, animation_chunk_t);
     bulk_data_init(&game->sprites, sprite_t);
 
     game->is_running = true;

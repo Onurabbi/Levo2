@@ -6,7 +6,6 @@
 void update_player(entity_t              *e, 
                    input_t               *input, 
                    float                  delta_time, 
-                   bulk_data_entity_t    *entities,
-                   bulk_data_animation_t *animations);
+                   bulk_data_entity_t    *entities);
 #endif
 

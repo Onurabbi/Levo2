@@ -8,13 +8,7 @@
 
 void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float tile_width, float tile_height);
 void vulkan_renderer_present(vulkan_renderer_t *renderer);
-void vulkan_renderer_copy_texture(vulkan_renderer_t *renderer, 
-                                  vulkan_texture_t *texture,
-                                  rect_t *src,
-                                  rect_t *dst);
-void vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
-                                     bulk_data_entity_t *entities, 
-                                     bulk_data_animation_t *animations, 
-                                     bulk_data_sprite_t *sprites, 
-                                     rect_t camera);
+void vulkan_renderer_render(vulkan_renderer_t *renderer, 
+                            game_t *game);
+void vulkan_renderer_render_text();
 #endif

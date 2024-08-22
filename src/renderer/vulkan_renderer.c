@@ -592,7 +592,7 @@ static VkShaderModule create_shader_module(VkDevice device, const char* filePath
 
 static void create_graphics_pipeline(vulkan_renderer_t *renderer)
 {
-//load shaders
+   //load shaders
     VkShaderModule vertModule = create_shader_module(renderer->logical_device, "./assets/shaders/vert.spv");
     VkShaderModule fragModule = create_shader_module(renderer->logical_device, "./assets/shaders/frag.spv");
 
@@ -758,6 +758,7 @@ static void create_graphics_pipeline(vulkan_renderer_t *renderer)
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.pDepthStencilState = &depthStencil;
+    
     VK_CHECK(vkCreateGraphicsPipelines(renderer->logical_device, VK_NULL_HANDLE, 1, &pipelineInfo, NULL, &renderer->graphics_pipeline));
     vkDestroyShaderModule(renderer->logical_device, fragModule, NULL);
     vkDestroyShaderModule(renderer->logical_device, vertModule, NULL);    
@@ -896,20 +897,6 @@ void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float
     LOGI("Success!");
 }
 
-/*
-    This function assumes that the render commands are sorted by texture
-
-*/
-void vulkan_renderer_copy_texture(vulkan_renderer_t *renderer, 
-                                  vulkan_texture_t *texture,
-                                  rect_t *src,
-                                  rect_t *dst)
-{
-    assert(renderer->current_texture < MAX_TEXTURE_COUNT);
-    assert(renderer->vertex_count < MAX_SPRITES_PER_BATCH * 4);
-
-}
-
 static int compare_drawables(const void *a, const void *b)
 {
     drawable_t *d1 = (drawable_t*)a;
@@ -940,18 +927,10 @@ static int compare_drawables(const void *a, const void *b)
     }
 }
 
-void vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
-                                     bulk_data_entity_t *entities, 
-                                     bulk_data_animation_t *animations, 
-                                     bulk_data_sprite_t *sprites, 
-                                     rect_t camera)
+static void vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
+                                            bulk_data_entity_t *entities,
+                                            rect_t camera)
 {
-    renderer->current_frame   = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
-    renderer->current_texture = 0;
-    renderer->vertex_count    = 0;
-    memset(renderer->textures, 0, sizeof(renderer->textures));
-    memset(renderer->offsets, 0, sizeof(renderer->offsets));
-
     drawable_t *drawables = memory_arena_push_array(scratch_allocator(), drawable_t, MAX_SPRITES_PER_BATCH);
     uint32_t drawable_count = 0;
 
@@ -972,7 +951,7 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                     case ENTITY_TYPE_PLAYER:
                     {
                         player_t *p = (player_t*)e->data;
-                        animation_t *anim = p->animations[p->current_animation];
+                        animation_t *anim = p->current_animation;
                         tex = anim->texture;
                         uint32_t current_frame = animation_get_current_frame(anim, p->anim_timer);
                         src_rect = anim->sprites[current_frame];
@@ -1007,7 +986,7 @@ void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
             }
         }
     }
-
+    
     //sort renders
     qsort(drawables, drawable_count, sizeof(drawables[0]), compare_drawables);
 
@@ -1142,4 +1121,23 @@ void vulkan_renderer_present(vulkan_renderer_t *renderer)
     presentInfo.pImageIndices = &renderer->image_index;
     VK_CHECK(vkQueuePresentKHR(renderer->graphics_queue, &presentInfo));
 }
+
+
+void vulkan_renderer_render(vulkan_renderer_t *renderer, game_t *game)
+{
+    //begin render
+    //reset entities
+    renderer->current_frame   = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    renderer->current_texture = 0;
+    renderer->vertex_count    = 0;
+    memset(renderer->textures, 0, sizeof(renderer->textures));
+    memset(renderer->offsets, 0, sizeof(renderer->offsets));
+    
+    //reset text
+
+    vulkan_renderer_render_entities(renderer, &game->entities, game->camera);
+    vulkan_renderer_render_text();
+    vulkan_renderer_present(renderer);
+}
+
 

@@ -158,6 +158,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
                                 void *pixels, 
                                 uint32_t w, 
                                 uint32_t h, 
+                                uint32_t num_comp,
                                 uint32_t mip_levels)
 {
     VkDeviceSize image_size = w * h * 4;
@@ -166,6 +167,8 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     texture->h = h;
     texture->mip_levels = mip_levels;
 
+    VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+    
     vulkan_buffer_t staging_buffer;
     create_vulkan_buffer(&staging_buffer,
                          renderer, 
@@ -176,12 +179,36 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
 
     void *data;
     vkMapMemory(renderer->logical_device, staging_buffer.memory, 0, image_size, 0, &data);
-    memcpy(data, pixels, image_size);
+#if 1
+    if (num_comp == 1)
+    {
+        uint8_t *dst_pixels = (uint8_t*)data;
+        uint8_t *src_pixels = (uint8_t*)pixels;
+
+        for (uint32_t row = 0; row < h; row++)
+        {
+            for (uint32_t col = 0; col < w; col++)
+            {
+                uint8_t red = *src_pixels++;
+                *dst_pixels++ = red;
+                *dst_pixels++ = red;
+                *dst_pixels++ = red;
+                *dst_pixels++ = red ? 0xFF : 0;
+            }
+        }
+    }
+    else
+    {
+#endif
+        memcpy(data, pixels, image_size);
+#if 1
+    }
+#endif  
     vkUnmapMemory(renderer->logical_device, staging_buffer.memory);
 
     create_image(texture,
                  renderer->logical_device,
-                 VK_FORMAT_R8G8B8A8_SRGB, 
+                 format, 
                  VK_IMAGE_TILING_OPTIMAL, 
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
                  &renderer->device_memory_properties, 
@@ -191,7 +218,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
                           renderer->command_pool,
                           renderer->graphics_queue,
                           texture->image,
-                          VK_FORMAT_R8G8B8A8_SRGB,
+                          format,
                           VK_IMAGE_LAYOUT_UNDEFINED,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copy_buffer_to_image(renderer->logical_device,
@@ -205,7 +232,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
                           renderer->command_pool,
                           renderer->graphics_queue,
                           texture->image,
-                          VK_FORMAT_R8G8B8A8_SRGB,
+                          format,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     vkDestroyBuffer(renderer->logical_device, staging_buffer.buffer,NULL);
@@ -215,7 +242,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image    = texture->image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format   = VK_FORMAT_R8G8B8A8_SRGB;
+    viewInfo.format   = format;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = mip_levels;
@@ -244,7 +271,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
 bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path)
 {
     int w,h,channels;
-    stbi_uc *pixels = stbi_load(file_path, &w, &h, &channels, STBI_rgb_alpha);
+    stbi_uc *pixels = stbi_load(file_path, &w, &h, &channels, 0);
     if (!pixels)
     {
         LOGE("Failed to load image");
@@ -253,7 +280,7 @@ bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *rend
 
     //uint32_t mip_levels = (uint32_t)floorf(log2f((float)MAX(w,h)));
 
-    vulkan_texture_from_buffer(texture,renderer, pixels, w, h, 1);
+    vulkan_texture_from_buffer(texture,renderer, pixels, w, h, channels, 1);
     stbi_image_free(pixels);
     create_descriptor_sets(texture, renderer);
     return true;
