@@ -102,7 +102,6 @@ typedef struct
 
     vulkan_texture_t *textures[MAX_TEXTURE_COUNT];
     uint64_t          offsets[MAX_TEXTURE_COUNT];
-    uint32_t          vertex_count;
     uint32_t          current_texture;
 
     float tile_width;

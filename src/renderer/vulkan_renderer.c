@@ -8,8 +8,9 @@
 #include "../game/game_types.h"
 #include "../game/collision.h"
 #include "../containers/containers.h"
-#include "../memory/memory_arena.h"
 #include "../game/animation.h"
+#include "../memory/memory.h"
+#include "../utils/utils.h"
 
 #include <math.h>
 
@@ -36,8 +37,7 @@ static void create_vulkan_instance(vulkan_renderer_t *renderer, SDL_Window *wind
 
     uint32_t sdl_extension_count = 0;
     SDL_Vulkan_GetInstanceExtensions(window, &sdl_extension_count, NULL);
-
-    const char **sdl_extensions = memory_arena_push_array(scratch_allocator(), const char*, sdl_extension_count);
+    const char **sdl_extensions = memory_alloc(sizeof(const char*) * sdl_extension_count, MEM_TAG_TEMP);
     assert(sdl_extensions);
 
     SDL_Vulkan_GetInstanceExtensions(window, &sdl_extension_count, sdl_extensions);
@@ -52,7 +52,7 @@ static void create_vulkan_instance(vulkan_renderer_t *renderer, SDL_Window *wind
 
     VK_CHECK(vkEnumerateInstanceLayerProperties(&layer_count, NULL));
 
-    VkLayerProperties *layer_properties = memory_arena_push_array(scratch_allocator(), VkLayerProperties, layer_count);
+    VkLayerProperties *layer_properties = memory_alloc(layer_count * sizeof(VkLayerProperties), MEM_TAG_TEMP);
     assert(layer_properties);
 
     VK_CHECK(vkEnumerateInstanceLayerProperties(&layer_count, layer_properties));
@@ -95,7 +95,7 @@ static void create_physical_device(vulkan_renderer_t *renderer)
     uint32_t physical_device_count;
     VK_CHECK(vkEnumeratePhysicalDevices(renderer->instance, &physical_device_count, NULL));
 
-    VkPhysicalDevice *physical_devices = memory_arena_push_array(scratch_allocator(), VkPhysicalDevice, physical_device_count);
+    VkPhysicalDevice *physical_devices = memory_alloc(physical_device_count * sizeof(VkPhysicalDevice), MEM_TAG_TEMP);
     assert(physical_devices);
 
     VK_CHECK(vkEnumeratePhysicalDevices(renderer->instance, &physical_device_count, physical_devices));
@@ -109,7 +109,7 @@ static void create_physical_device(vulkan_renderer_t *renderer)
     uint32_t queue_family_property_count;
     vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_property_count, NULL);
 
-    VkQueueFamilyProperties *queue_family_properties = memory_arena_push_array(scratch_allocator(), VkQueueFamilyProperties, queue_family_property_count);
+    VkQueueFamilyProperties *queue_family_properties = memory_alloc(queue_family_property_count * sizeof(VkQueueFamilyProperties), MEM_TAG_TEMP);
     vkGetPhysicalDeviceQueueFamilyProperties(renderer->physical_device, &queue_family_property_count, queue_family_properties);
 
     uint32_t graphics_family   = UINT32_MAX;
@@ -240,7 +240,7 @@ static void create_swapchain(vulkan_renderer_t *renderer)
     uint32_t format_count;
     vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->physical_device, renderer->surface, &format_count, NULL);
 
-    VkSurfaceFormatKHR *surface_formats = memory_arena_push_array(scratch_allocator(), VkSurfaceFormatKHR, format_count);
+    VkSurfaceFormatKHR *surface_formats = memory_alloc(sizeof(VkSurfaceFormatKHR) * format_count, MEM_TAG_TEMP);
     assert(surface_formats);
 
     vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->physical_device, renderer->surface, &format_count, surface_formats);
@@ -256,7 +256,7 @@ static void create_swapchain(vulkan_renderer_t *renderer)
     uint32_t present_mode_count;
     vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->physical_device, renderer->surface, &present_mode_count, NULL);
 
-    VkPresentModeKHR *present_modes = memory_arena_push_array(scratch_allocator(), VkPresentModeKHR, present_mode_count);
+    VkPresentModeKHR *present_modes = memory_alloc(sizeof(VkPresentModeKHR)*present_mode_count, MEM_TAG_TEMP);
     assert(present_modes);
     
     vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->physical_device, renderer->surface, &present_mode_count, present_modes);
@@ -563,20 +563,8 @@ static void create_framebuffers(vulkan_renderer_t *renderer)
 
 static VkShaderModule create_shader_module(VkDevice device, const char* filePath)
 {
-    FILE* file = fopen(filePath, "rb");
-    if (!file)
-    {
-        return VK_NULL_HANDLE;
-    }
-
-    fseek(file, 0, SEEK_END);
-    long fsize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    char *data = memory_arena_push_array(scratch_allocator(), char, fsize);
-    assert(data);
-    fread(data, 1, fsize, file);
-    fclose(file);
+    long fsize;
+    char *data = read_whole_file(filePath, &fsize);
     
     VkShaderModule result;
     VkShaderModuleCreateInfo shaderModule = {};
@@ -803,7 +791,7 @@ static void create_index_buffer(vulkan_renderer_t *renderer,
 {
     assert(indexCount % 6 == 0);
     //initialize index buffer
-    uint16_t *indices = memory_arena_push_array(scratch_allocator(), uint16_t, indexCount);
+    uint16_t *indices = memory_alloc(sizeof(uint16_t) * indexCount, MEM_TAG_TEMP);
     uint32_t index = 0;
     for (uint16_t i = 0; i < indexCount; i += 6)
     {
@@ -875,8 +863,6 @@ void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float
         return;
     }
 
-    renderer->vertex_count = 0;
-
     create_physical_device(renderer);
     create_logical_device(renderer);
     create_swapchain(renderer);
@@ -927,11 +913,14 @@ static int compare_drawables(const void *a, const void *b)
     }
 }
 
-static void vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
-                                            bulk_data_entity_t *entities,
-                                            rect_t camera)
+static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
+                                                bulk_data_entity_t *entities,
+                                                rect_t camera,
+                                                vertex_t *vertices, 
+                                                uint32_t vertex_count,
+                                                uint32_t vertex_capacity)
 {
-    drawable_t *drawables = memory_arena_push_array(scratch_allocator(), drawable_t, MAX_SPRITES_PER_BATCH);
+    drawable_t *drawables = memory_alloc(sizeof(drawable_t) * MAX_SPRITES_PER_BATCH, MEM_TAG_RENDER);
     uint32_t drawable_count = 0;
 
     for (uint32_t i = 0; i < bulk_data_size(entities); i++)
@@ -939,7 +928,7 @@ static void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
         entity_t *e = bulk_data_getp_null(entities, i);
         if (e)
         {
-            assert(drawable_count < MAX_SPRITES_PER_BATCH *4);
+            assert(drawable_count < MAX_SPRITES_PER_BATCH);
 
             //rect vs rect against camera
             if (rect_vs_rect(e->rect, camera))
@@ -990,13 +979,13 @@ static void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
     //sort renders
     qsort(drawables, drawable_count, sizeof(drawables[0]), compare_drawables);
 
-    vertex_t *vertices = memory_arena_push_array(scratch_allocator(), vertex_t, MAX_SPRITES_PER_BATCH);
-
     float half_width = (float)renderer->swapchain_extent.width * 0.5f;
     float half_height = (float)renderer->swapchain_extent.height * 0.5f;
 
     for (uint32_t i = 0; i < drawable_count; i++)
     {
+        assert(vertex_count <= vertex_capacity - 4);
+
         drawable_t *drawable = &drawables[i];
         rect_t dst = drawable->dst_rect;
         rect_t src = drawable->src_rect;
@@ -1010,7 +999,7 @@ static void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
 
         if (renderer->textures[renderer->current_texture] != texture)
         {
-            renderer->offsets[renderer->current_texture + 1]  = renderer->vertex_count;
+            renderer->offsets[renderer->current_texture + 1]  = vertex_count;
             renderer->textures[renderer->current_texture + 1] = texture;
             renderer->current_texture++;
         }
@@ -1025,28 +1014,94 @@ static void vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
         float du = src.size.x / texture->w;
         float dv = src.size.y / texture->h;
 
-        vertex_t *top_left = &vertices[renderer->vertex_count++];
+        vertex_t *top_left = &vertices[vertex_count++];
         top_left->pos       = (vec2f_t){left, top};
         top_left->tex_coord = (vec2f_t){u,v};
 
-        vertex_t *top_right = &vertices[renderer->vertex_count++];
+        vertex_t *top_right = &vertices[vertex_count++];
         top_right->pos       = (vec2f_t){right, top};
         top_right->tex_coord = (vec2f_t){u + du, v};
 
-        vertex_t *bottom_right = &vertices[renderer->vertex_count++];
+        vertex_t *bottom_right = &vertices[vertex_count++];
         bottom_right->pos       = (vec2f_t){right, bottom};
         bottom_right->tex_coord = (vec2f_t){u + du, v + dv};
 
-        vertex_t *bottom_left = &vertices[renderer->vertex_count++];
+        vertex_t *bottom_left = &vertices[vertex_count++];
         bottom_left->pos         = (vec2f_t){left, bottom};
         bottom_left->tex_coord   = (vec2f_t){u, v + dv};
     }
-    //update vertex buffer
-    memcpy(renderer->vertex_buffers[renderer->current_frame].mapped, vertices, sizeof(vertex_t) * renderer->vertex_count);
+    return vertex_count;
 }
 
-void vulkan_renderer_present(vulkan_renderer_t *renderer)
+static uint32_t vulkan_renderer_render_text(vulkan_renderer_t *renderer, drawable_text_t *visible_text, uint32_t visible_text_count, vertex_t *vertices, uint32_t vertex_count, uint32_t vertex_capacity)
 {
+    if (visible_text_count == 0)
+    {
+        return 0;
+    }
+
+    //! TODO: more than one font won't work like this
+    font_t *font = visible_text[0].font;
+    vulkan_texture_t *font_texture = font->texture;
+    rect_t *glyphs = font->glyphs;
+
+    renderer->offsets[renderer->current_texture+1] = vertex_count;
+    renderer->textures[renderer->current_texture+1] = font_texture;
+    renderer->current_texture++; 
+
+    float half_width = (float)renderer->swapchain_extent.width * 0.5f;
+    float half_height = (float)renderer->swapchain_extent.height * 0.5f;
+
+    for (uint32_t i = 0; i < visible_text_count; i++)
+    {
+        drawable_text_t *drawable = &visible_text[i];
+        const char *text          = drawable->text;
+        uint32_t len              = strlen(text);
+        float x                   = drawable->position.x;
+        float y                   = drawable->position.y;
+
+        for (uint32_t j = 0; j < len; j++)
+        {
+            rect_t src = glyphs[text[j] - ' '];
+            rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
+
+            float left   = (dst.min.x - half_width) / half_width;
+            float right  = (dst.min.x + dst.size.x - half_width) / half_width;
+            float top    = (dst.min.y - half_height) / half_height;
+            float bottom = (dst.min.y + dst.size.y - half_height) / half_height;
+
+            float u  = src.min.x / font_texture->w;
+            float v  = src.min.y / font_texture->h;
+            float du = src.size.x / font_texture->w;
+            float dv = src.size.y / font_texture->h;
+
+            vertex_t *top_left = &vertices[vertex_count++];
+            top_left->pos       = (vec2f_t){left, top};
+            top_left->tex_coord = (vec2f_t){u,v};
+
+            vertex_t *top_right = &vertices[vertex_count++];
+            top_right->pos       = (vec2f_t){right, top};
+            top_right->tex_coord = (vec2f_t){u + du, v};
+
+            vertex_t *bottom_right = &vertices[vertex_count++];
+            bottom_right->pos       = (vec2f_t){right, bottom};
+            bottom_right->tex_coord = (vec2f_t){u + du, v + dv};
+
+            vertex_t *bottom_left = &vertices[vertex_count++];
+            bottom_left->pos         = (vec2f_t){left, bottom};
+            bottom_left->tex_coord   = (vec2f_t){u, v + dv};
+
+            x += src.size.x;
+        }
+    }
+    return vertex_count;
+}
+
+static void vulkan_renderer_present(vulkan_renderer_t *renderer, vertex_t *vertices, uint32_t vertex_count)
+{
+    //update vertex buffer
+    memcpy(renderer->vertex_buffers[renderer->current_frame].mapped, vertices, sizeof(vertex_t) * vertex_count);
+
     vkWaitForFences(renderer->logical_device, 1, &renderer->wait_fences[renderer->current_frame], VK_TRUE, UINT64_MAX);
     vkAcquireNextImageKHR(renderer->logical_device, 
                           renderer->swapchain, 
@@ -1086,7 +1141,7 @@ void vulkan_renderer_present(vulkan_renderer_t *renderer)
     uint32_t first_index = 0;
     for (uint32_t i = 0; i <= renderer->current_texture; i++)
     {
-        uint64_t next_offset = (i < (renderer->current_texture) ? renderer->offsets[i + 1] : renderer->vertex_count);
+        uint64_t next_offset = (i < (renderer->current_texture) ? renderer->offsets[i + 1] : vertex_count);
 
         uint64_t vertex_count = next_offset - renderer->offsets[i];
         uint64_t index_count  = vertex_count * 6 / 4;
@@ -1126,18 +1181,19 @@ void vulkan_renderer_present(vulkan_renderer_t *renderer)
 void vulkan_renderer_render(vulkan_renderer_t *renderer, game_t *game)
 {
     //begin render
+    vertex_t *vertices = memory_alloc(sizeof(vertex_t) * MAX_SPRITES_PER_BATCH * 4, MEM_TAG_RENDER);
+
     //reset entities
     renderer->current_frame   = (renderer->current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     renderer->current_texture = 0;
-    renderer->vertex_count    = 0;
     memset(renderer->textures, 0, sizeof(renderer->textures));
     memset(renderer->offsets, 0, sizeof(renderer->offsets));
     
     //reset text
 
-    vulkan_renderer_render_entities(renderer, &game->entities, game->camera);
-    vulkan_renderer_render_text();
-    vulkan_renderer_present(renderer);
+    uint32_t vertex_count = vulkan_renderer_render_entities(renderer, &game->entities, game->camera, vertices, 0, MAX_SPRITES_PER_BATCH * 4);
+    vertex_count = vulkan_renderer_render_text(renderer, game->visible_text, game->visible_text_count, vertices, vertex_count, MAX_SPRITES_PER_BATCH * 4);
+    vulkan_renderer_present(renderer, vertices, vertex_count);
 }
 
 

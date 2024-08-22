@@ -122,12 +122,11 @@ typedef struct
 typedef struct
 {  
     vulkan_texture_t *texture;
-    rect_t glyphs[94];
+    rect_t glyphs[95];
 }font_t;
 
 typedef struct __drawable_text_t
 {
-    struct drawable_text_t *next;
     const char *text;
     font_t *font;
     vec2f_t position;

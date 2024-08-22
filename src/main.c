@@ -8,7 +8,6 @@
 #include "renderer/vulkan_texture.h"
 #include "renderer/vulkan_renderer.h"
 #include "asset_store/asset_store.h"
-#include "memory/memory_arena.h"
 #include "game/game.h"
 
 int main(int argc, char *argv[])

@@ -7,11 +7,12 @@
 #include "player.h"
 #include "animation.h"
 
+#include "../memory/memory.h"
 #include "../logger/logger.h"
-#include "../memory/memory_arena.h"
 #include "../cJSON/cJSON.h"
 #include "../containers/string.h"
 #include "../math/math_utils.h"
+#include "../utils/utils.h"
 
 #include <SDL2/SDL.h>
 #include <assert.h>
@@ -37,7 +38,12 @@ entity_type_from_string(const char *str)
 //! NOTE: Text should be on permanent storage
 static void add_text_to_render(game_t *game, const char *text, font_t *font, vec2f_t p)
 {
+    assert(game->visible_text_count < MAX_VISIBLE_TEXT_PER_SCENE);
 
+    drawable_text_t *drawable = &game->visible_text[game->visible_text_count++];
+    drawable->text = text;
+    drawable->font = font;
+    drawable->position = p;
 }
 
 static uint32_t load_animations_from_json(game_t             *game, 
@@ -277,29 +283,6 @@ static void load_tiles_from_json(game_t *game, cJSON *root)
     tile_entity->data = tile_data;
 }
 
-static char *read_whole_file(const char *file_path)
-{
-    FILE *file = fopen(file_path, "r");
-    if (!file)
-    {
-        LOGE("Unable to load %s\n", file_path);
-        return NULL;
-    }
-
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    char *file_buf = memory_arena_push_array(scratch_allocator(), char, file_size + 1);
-    assert(file_buf);
-
-    fread(file_buf, 1, file_size, file);
-    file_buf[file_size] = '\0';
-    fclose(file);
-
-    return file_buf;
-}
-
 static void load_assets_from_json(game_t *game, cJSON *root)
 {
     cJSON *assets = cJSON_GetObjectItem(root, "assets");
@@ -339,28 +322,32 @@ static void load_assets_from_json(game_t *game, cJSON *root)
             cJSON *font = NULL;
             cJSON_ArrayForEach(font, fonts)
             {
+                const char *texture_id = cJSON_GetStringValue(cJSON_GetObjectItem(font, "texture"));
+                game->font.texture = asset_store_get_texture(&game->asset_store, texture_id);
+                assert(game->font.texture);
+
                 float width = cJSON_GetNumberValue(cJSON_GetObjectItem(font, "width"));
                 float height = cJSON_GetNumberValue(cJSON_GetObjectItem(font, "height"));
-
+                
                 const char *file_name = cJSON_GetStringValue(cJSON_GetObjectItem(font, "vertices"));
-                char *buf = read_whole_file(file_name);
+                char *buf = read_whole_file(file_name, NULL);
                 char *tok = strtok(buf, ",");
                 while(tok)
                 {
-                    float x = strtof(tok, NULL);
+                    float x1 = strtof(tok, NULL);
                     tok = strtok(NULL, ",");
-                    float y = strtof(tok, NULL);
+                    float x2 = strtof(tok, NULL);
                     tok = strtok(NULL, ",");
-                    float dx = strtof(tok, NULL);
+                    float y1 = strtof(tok, NULL);
                     tok = strtok(NULL, ",");
-                    float dy = strtof(tok, NULL);
+                    float y2 = strtof(tok, NULL);
                     tok = strtok(NULL, ",");
 
                     rect_t *glyph = &game->font.glyphs[glyph_count++];
-                    glyph->min.x  = x;
-                    glyph->min.y  = y;
-                    glyph->size.x = dx;
-                    glyph->size.y = dy; 
+                    glyph->min.x  = x1;
+                    glyph->min.y  = y1;
+                    glyph->size.x = x2 - x1;
+                    glyph->size.y = y2 - y1; 
                 }
             }
         }
@@ -374,7 +361,7 @@ static void load_assets_from_json(game_t *game, cJSON *root)
 
 static void load_level(game_t *game, const char *data_file_path)
 {
-    char *file_buf = read_whole_file(data_file_path);
+    char *file_buf = read_whole_file(data_file_path, NULL);
     cJSON *root = cJSON_Parse(file_buf);
     if (!root)
     {
@@ -415,21 +402,27 @@ static void update(game_t *game)
         return;
     }
 
-    memory_arena_begin(scratch_allocator());
+    memory_begin(MEM_TAG_SIM);
 
     uint64_t now = SDL_GetPerformanceCounter();
     uint64_t elapsed = now - game->previous_counter;
     game->previous_counter = now;
     
     double sec = (double)elapsed / game->performance_freq;
+
+    static char FPS[16];
+
     //LOGI("FPS: %lf", 1.0 / sec);
     game->accumulator += sec;
 
     while (game->accumulator > 1.0 / 61.0)
     {
+        memory_begin(MEM_TAG_RENDER);
+
         //reset all text
         game->visible_text_count = 0;
-
+        sprintf(FPS, "FPS: %.2lf", 1.0/sec);
+        add_text_to_render(game, FPS, &game->font, (vec2f_t){20, WINDOW_HEIGHT - 50});
         //update all entities
         for (uint32_t i = 0; i < bulk_data_size(&game->entities); i++)
         {
@@ -480,6 +473,7 @@ void game_run(game_t *game)
         update(game);
         render(game);
     }
+    memory_uninit();
 }
 
 
@@ -503,7 +497,7 @@ void game_init(game_t *game)
 
     game->is_running = false;
 
-    memory_arena_init();
+    memory_init();
     
     asset_store_init(&game->asset_store);
     vulkan_renderer_init(&game->renderer, game->window, TILE_WIDTH, TILE_HEIGHT);
