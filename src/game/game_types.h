@@ -13,7 +13,6 @@
 #define MAX_VISIBLE_TEXT_PER_SCENE 32
 
 #define ENTITY_CAN_COLLIDE 0x1
-
 typedef uint64_t entity_flags_t;
 
 typedef enum
@@ -22,8 +21,17 @@ typedef enum
     ENTITY_TYPE_TILE,
     ENTITY_TYPE_ENEMY,
     ENTITY_TYPE_WEAPON,
+    ENTITY_TYPE_WIDGET,
     ENTITY_TYPE_UNKNOWN
 }entity_type_t;
+
+typedef enum
+{
+    WIDGET_TYPE_FPS,
+    WIDGET_TYPE_DIALOGUE,
+    WIDGET_TYPE_DAMAGE_NUMBER,
+    WIDGET_TYPE_MAX
+}widget_type_t;
 
 typedef enum
 {
@@ -44,6 +52,23 @@ typedef enum
     WEAPON_SLOT_MAX
 }weapon_slot_t;
 
+typedef struct
+{  
+    vulkan_texture_t *texture;
+    rect_t glyphs[95];
+}font_t;
+
+typedef struct 
+{
+    const char   *text;
+    font_t       *font;
+    //from the owner entity
+    vec2f_t       offset; 
+    float         timer;
+    //if it fades away, this is when it fades away, if it updates periodically, this is when it updates
+    float         duration; 
+
+}text_label_t;
 
 typedef struct
 {
@@ -75,6 +100,13 @@ typedef struct
     weapon_slot_t slot;
 }weapon_t;
 
+typedef struct 
+{
+    entity_t     *entity;
+    widget_type_t type;
+    text_label_t  *text_label;
+}widget_t;
+
 typedef struct
 {
     entity_state_t    state;
@@ -101,8 +133,11 @@ typedef struct
 typedef struct 
 {
     entity_t    *entity;
-    float       velocity;
-    vec2f_t     dp;
+    
+    text_label_t *name;
+
+    float        velocity;
+    vec2f_t      dp;
 
     //animation playback
     animation_chunk_t *animation_chunks[MAX_ANIMATION_CHUNKS_PER_ENTITY];
@@ -120,19 +155,6 @@ typedef struct
 }tile_t;
 
 typedef struct
-{  
-    vulkan_texture_t *texture;
-    rect_t glyphs[95];
-}font_t;
-
-typedef struct __drawable_text_t
-{
-    const char *text;
-    font_t *font;
-    vec2f_t position;
-}drawable_text_t;
-
-typedef struct
 {
     uint32_t i;
     float    f;
@@ -143,6 +165,8 @@ BulkDataTypes(tile_t)
 BulkDataTypes(animation_chunk_t)
 BulkDataTypes(sprite_t)
 BulkDataTypes(weapon_t)
+BulkDataTypes(widget_t)
+BulkDataTypes(text_label_t)
 
 struct SDL_Window;
 
@@ -156,6 +180,10 @@ typedef struct
 typedef struct 
 {
     struct SDL_Window *window;
+    int32_t            window_width;
+    int32_t            window_height;
+    float              tile_width;
+
     asset_store_t      asset_store;
     vulkan_renderer_t  renderer;
     
@@ -165,18 +193,18 @@ typedef struct
 
     uint64_t           entity_id;
     bulk_data_entity_t entities;
+
     //entity specific data (other than player)
-    bulk_data_tile_t   tiles;
-    bulk_data_weapon_t weapons;
+    bulk_data_tile_t       tiles;
+    bulk_data_weapon_t     weapons;
+    bulk_data_widget_t     widgets;
 
     //resources
     bulk_data_animation_chunk_t animation_chunks;
     bulk_data_sprite_t          sprites;
-
+    bulk_data_text_label_t      text_labels;
 
     //text rendering
-    drawable_text_t visible_text[MAX_VISIBLE_TEXT_PER_SCENE];
-    uint32_t        visible_text_count;
     font_t font;
 
     input_t input;

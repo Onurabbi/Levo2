@@ -21,8 +21,6 @@
 #include <stdlib.h>
 
 #define MAX_FRAMES_IN_FLIGHT 2
-#define TILE_WIDTH 64
-#define TILE_HEIGHT 64
 
 static void create_vulkan_instance(vulkan_renderer_t *renderer, SDL_Window *window)
 {
@@ -61,7 +59,6 @@ static void create_vulkan_instance(vulkan_renderer_t *renderer, SDL_Window *wind
 
     for (uint32_t i = 0; i < layer_count; i++)
     {
-        LOGI("Layer name: %s", layer_properties[i].layerName);
         if (strcmp(validation_layer_name, layer_properties[i].layerName) == 0)
         {
             validation_layer_found = true;
@@ -71,7 +68,6 @@ static void create_vulkan_instance(vulkan_renderer_t *renderer, SDL_Window *wind
 
     if (validation_layer_found)
     {
-        LOGI("Enabling validation");
         validation_layer_count = 1;
         enabled_layer_names = &validation_layer_name;
     }
@@ -269,7 +265,6 @@ static void create_swapchain(vulkan_renderer_t *renderer)
         if (present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR)
         {
             swapchain_present_mode = present_modes[i];
-            LOGI("Present mode is mailbox %u", i);
             break;
         }
     }
@@ -856,6 +851,9 @@ static void create_descriptor_pool(vulkan_renderer_t *renderer)
 
 void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float tile_width, float tile_height)
 {
+    renderer->tile_width = tile_width;
+    renderer->tile_height = tile_height;
+
     create_vulkan_instance(renderer, window);
     if (!SDL_Vulkan_CreateSurface(window, renderer->instance, &renderer->surface))
     {
@@ -880,7 +878,6 @@ void vulkan_renderer_init(vulkan_renderer_t *renderer, SDL_Window *window, float
     create_index_buffer(renderer, MAX_SPRITES_PER_BATCH * 6);
     create_descriptor_pool(renderer);
 
-    LOGI("Success!");
 }
 
 static int compare_drawables(const void *a, const void *b)
@@ -931,7 +928,8 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
             assert(drawable_count < MAX_SPRITES_PER_BATCH);
 
             //rect vs rect against camera
-            if (rect_vs_rect(e->rect, camera))
+            if (e->type == ENTITY_TYPE_WIDGET ||
+                rect_vs_rect(e->rect, camera))
             {
                 vulkan_texture_t *tex = NULL;
                 rect_t src_rect = {0};
@@ -944,6 +942,39 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                         tex = anim->texture;
                         uint32_t current_frame = animation_get_current_frame(anim, p->anim_timer);
                         src_rect = anim->sprites[current_frame];
+                        drawable_t *drawable = &drawables[drawable_count++];
+                        drawable->tex = tex;
+                        drawable->src_rect = src_rect;
+                        drawable->dst_rect = e->rect;
+                        drawable->dst_rect.min.x -= camera.min.x + renderer->tile_width / 2;
+                        drawable->dst_rect.min.y -= camera.min.y + renderer->tile_height / 2;
+                        drawable->z_index = e->z_index;
+
+                        text_label_t *label = p->name;
+                        const char *text = (label->text ? label->text : "NULL");
+                        uint32_t len = strlen(text);
+                        
+                        float x = e->rect.min.x + label->offset.x - camera.min.x - renderer->tile_width / 2;
+                        float y = e->rect.min.y + label->offset.y - camera.min.y - renderer->tile_height / 2;
+                        
+                        font_t *font = label->font;
+                        vulkan_texture_t *font_texture = font->texture;
+                        rect_t *glyphs = font->glyphs;
+
+                        for (uint32_t i = 0; i < len; i++)
+                        {
+                            rect_t src = glyphs[text[i] - ' '];
+                            rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
+
+                            drawable_t *drawable = &drawables[drawable_count++];
+                            drawable->tex = font_texture;
+                            drawable->src_rect = src;
+                            drawable->dst_rect = dst;
+                            drawable->z_index = e->z_index;
+
+                            x += src.size.x;
+                        }
+
                         break;
                     }
                     case ENTITY_TYPE_TILE:
@@ -951,6 +982,13 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                         tile_t *tile = (tile_t*)e->data;
                         tex = tile->sprite.texture;
                         src_rect = tile->sprite.src_rect;
+                        drawable_t *drawable = &drawables[drawable_count++];
+                        drawable->tex = tex;
+                        drawable->src_rect = src_rect;
+                        drawable->dst_rect = e->rect;
+                        drawable->dst_rect.min.x -= camera.min.x + renderer->tile_width / 2;
+                        drawable->dst_rect.min.y -= camera.min.y + renderer->tile_height / 2;
+                        drawable->z_index = e->z_index;
                         break;
                     }
                     case ENTITY_TYPE_WEAPON:
@@ -958,20 +996,47 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                         weapon_t *weapon = (weapon_t*)e->data;
                         tex = weapon->sprite.texture;
                         src_rect = weapon->sprite.src_rect;
+                        drawable_t *drawable = &drawables[drawable_count++];
+                        drawable->tex = tex;
+                        drawable->src_rect = src_rect;
+                        drawable->dst_rect = e->rect;
+                        drawable->dst_rect.min.x -= camera.min.x + renderer->tile_width / 2;
+                        drawable->dst_rect.min.y -= camera.min.y + renderer->tile_height / 2;
+                        drawable->z_index = e->z_index;
+                        break;
+                    }
+                    case ENTITY_TYPE_WIDGET:
+                    {
+                        widget_t *widget = (widget_t*)e->data;
+                        const char *text = (widget->text_label->text ? widget->text_label->text : "NULL");
+                        uint32_t len = strlen(text);
+                        
+                        float x = e->rect.min.x + widget->text_label->offset.x;
+                        float y = e->rect.min.y + widget->text_label->offset.y;
+
+                        font_t *font = widget->text_label->font;
+                        vulkan_texture_t *font_texture = font->texture;
+                        rect_t *glyphs = font->glyphs;
+
+                        for (uint32_t i = 0; i < len; i++)
+                        {
+                            rect_t src = glyphs[text[i] - ' '];
+                            rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
+
+                            drawable_t *drawable = &drawables[drawable_count++];
+                            drawable->tex = font_texture;
+                            drawable->src_rect = src;
+                            drawable->dst_rect = dst;
+                            drawable->z_index = e->z_index;
+
+                            x += src.size.x;
+                        }
                         break;
                     }
                     default: 
                         assert(false);
                         break;
                 }
-
-                drawable_t *drawable = &drawables[drawable_count++];
-                drawable->tex = tex;
-                drawable->src_rect = src_rect;
-                drawable->dst_rect = e->rect;
-                drawable->dst_rect.min.x -= camera.min.x + TILE_WIDTH / 2;
-                drawable->dst_rect.min.y -= camera.min.y + TILE_HEIGHT / 2;
-                drawable->z_index = e->z_index;
             }
         }
     }
@@ -1029,70 +1094,6 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
         vertex_t *bottom_left = &vertices[vertex_count++];
         bottom_left->pos         = (vec2f_t){left, bottom};
         bottom_left->tex_coord   = (vec2f_t){u, v + dv};
-    }
-    return vertex_count;
-}
-
-static uint32_t vulkan_renderer_render_text(vulkan_renderer_t *renderer, drawable_text_t *visible_text, uint32_t visible_text_count, vertex_t *vertices, uint32_t vertex_count, uint32_t vertex_capacity)
-{
-    if (visible_text_count == 0)
-    {
-        return 0;
-    }
-
-    //! TODO: more than one font won't work like this
-    font_t *font = visible_text[0].font;
-    vulkan_texture_t *font_texture = font->texture;
-    rect_t *glyphs = font->glyphs;
-
-    renderer->offsets[renderer->current_texture+1] = vertex_count;
-    renderer->textures[renderer->current_texture+1] = font_texture;
-    renderer->current_texture++; 
-
-    float half_width = (float)renderer->swapchain_extent.width * 0.5f;
-    float half_height = (float)renderer->swapchain_extent.height * 0.5f;
-
-    for (uint32_t i = 0; i < visible_text_count; i++)
-    {
-        drawable_text_t *drawable = &visible_text[i];
-        const char *text          = drawable->text;
-        uint32_t len              = strlen(text);
-        float x                   = drawable->position.x;
-        float y                   = drawable->position.y;
-
-        for (uint32_t j = 0; j < len; j++)
-        {
-            rect_t src = glyphs[text[j] - ' '];
-            rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
-
-            float left   = (dst.min.x - half_width) / half_width;
-            float right  = (dst.min.x + dst.size.x - half_width) / half_width;
-            float top    = (dst.min.y - half_height) / half_height;
-            float bottom = (dst.min.y + dst.size.y - half_height) / half_height;
-
-            float u  = src.min.x / font_texture->w;
-            float v  = src.min.y / font_texture->h;
-            float du = src.size.x / font_texture->w;
-            float dv = src.size.y / font_texture->h;
-
-            vertex_t *top_left = &vertices[vertex_count++];
-            top_left->pos       = (vec2f_t){left, top};
-            top_left->tex_coord = (vec2f_t){u,v};
-
-            vertex_t *top_right = &vertices[vertex_count++];
-            top_right->pos       = (vec2f_t){right, top};
-            top_right->tex_coord = (vec2f_t){u + du, v};
-
-            vertex_t *bottom_right = &vertices[vertex_count++];
-            bottom_right->pos       = (vec2f_t){right, bottom};
-            bottom_right->tex_coord = (vec2f_t){u + du, v + dv};
-
-            vertex_t *bottom_left = &vertices[vertex_count++];
-            bottom_left->pos         = (vec2f_t){left, bottom};
-            bottom_left->tex_coord   = (vec2f_t){u, v + dv};
-
-            x += src.size.x;
-        }
     }
     return vertex_count;
 }
@@ -1192,7 +1193,6 @@ void vulkan_renderer_render(vulkan_renderer_t *renderer, game_t *game)
     //reset text
 
     uint32_t vertex_count = vulkan_renderer_render_entities(renderer, &game->entities, game->camera, vertices, 0, MAX_SPRITES_PER_BATCH * 4);
-    vertex_count = vulkan_renderer_render_text(renderer, game->visible_text, game->visible_text_count, vertices, vertex_count, MAX_SPRITES_PER_BATCH * 4);
     vulkan_renderer_present(renderer, vertices, vertex_count);
 }
 

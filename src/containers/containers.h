@@ -2,8 +2,7 @@
 #define CONTAINERS_H_
 
 #include "container_types.h"
-
-#include <sys/mman.h>
+#include "../memory/memory.h"
 
 #define MAX_ENTITY_COUNT 1024UL * 1024UL
 
@@ -54,20 +53,15 @@ do                                                      \
     }                                                   \
 }while(0)
 
-#define bulk_data_init(bd, type)                           \
-do                                                         \
-{                                                          \
-memset((bd), 0, sizeof(*(bd)));                            \
-item_##type     dummy;                                     \
-dummy.next = 0;                                            \
-dummy.generation = 0;                                      \
-(bd)->items = mmap(0,                                      \
-                   MAX_ENTITY_COUNT * sizeof(type),        \
-                   PROT_READ | PROT_WRITE,                 \
-                   MAP_PRIVATE | MAP_ANONYMOUS,            \
-                   -1,                                     \
-                    0);                                    \
-(bd)->items[(bd)->count++] = dummy;                        \
+#define bulk_data_init(bd, type)                              \
+do                                                            \
+{                                                             \
+memset((bd), 0, sizeof(*(bd)));                               \
+item_##type     dummy;                                        \
+dummy.next = 0;                                               \
+dummy.generation = 0;                                         \
+(bd)->items = memory_alloc(GIGABYTES(1), MEM_TAG_BULK_DATA);  \
+(bd)->items[(bd)->count++] = dummy;                           \
 }while(0)
 
 #define hash_map_init(hm,v)  \
