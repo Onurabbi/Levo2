@@ -910,6 +910,71 @@ static int compare_drawables(const void *a, const void *b)
     }
 }
 
+static inline void draw_sprite(drawable_t *drawables, 
+                               uint32_t *drawable_count,
+                               vulkan_texture_t *texture,   
+                               rect_t src_rect, 
+                               rect_t dst_rect, 
+                               rect_t camera,
+                               float tile_width,
+                               float tile_height,
+                               uint32_t z_index,
+                               bool is_fixed)
+{
+    uint32_t count = *drawable_count;
+
+    drawable_t *drawable = &drawables[count++];
+    drawable->tex = texture;
+    drawable->src_rect = src_rect;
+    drawable->dst_rect = dst_rect;
+    drawable->dst_rect.min.x -= (is_fixed ? 0 : camera.min.x);
+    drawable->dst_rect.min.y -= (is_fixed ? 0 : camera.min.y);
+    drawable->dst_rect.min.x -= tile_width / 2;
+    drawable->dst_rect.min.y -= tile_height / 2;
+    drawable->z_index = z_index;
+
+    *drawable_count = count;
+}
+
+static void draw_text(drawable_t *drawables,
+                      uint32_t  *drawable_count, 
+                      text_label_t *label,
+                      vec2f_t p,
+                      rect_t camera,
+                      float tile_width, 
+                      float tile_height,
+                      uint32_t z_index,
+                      bool is_fixed)
+{
+    uint32_t count = *drawable_count;
+
+    const char *text = (label->text ? label->text : "NULL");
+    uint32_t len = strlen(text);
+    
+    float x = p.x + label->offset.x - (is_fixed ? 0 : camera.min.x) - tile_width / 2;
+    float y = p.y + label->offset.y - (is_fixed ? 0 : camera.min.y) - tile_height / 2;
+    
+    font_t *font = label->font;
+    vulkan_texture_t *font_texture = font->texture;
+    rect_t *glyphs = font->glyphs;
+
+    for (uint32_t i = 0; i < len; i++)
+    {
+        rect_t src = glyphs[text[i] - ' '];
+        rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
+
+        drawable_t *drawable = &drawables[count++];
+        drawable->tex = font_texture;
+        drawable->src_rect = src;
+        drawable->dst_rect = dst;
+        drawable->z_index = z_index;
+
+        x += src.size.x;
+    }
+    
+    *drawable_count = count;
+}
+
 static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer, 
                                                 bulk_data_entity_t *entities,
                                                 rect_t camera,
@@ -931,106 +996,34 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
             if (e->type == ENTITY_TYPE_WIDGET ||
                 rect_vs_rect(e->rect, camera))
             {
-                vulkan_texture_t *tex = NULL;
-                rect_t src_rect = {0};
                 switch(e->type)
                 {
                     case ENTITY_TYPE_PLAYER:
                     {
                         player_t *p = (player_t*)e->data;
                         animation_t *anim = p->current_animation;
-                        tex = anim->texture;
                         uint32_t current_frame = animation_get_current_frame(anim, p->anim_timer);
-                        src_rect = anim->sprites[current_frame];
-                        drawable_t *drawable = &drawables[drawable_count++];
-                        drawable->tex = tex;
-                        drawable->src_rect = src_rect;
-                        drawable->dst_rect = e->rect;
-                        drawable->dst_rect.min.x -= camera.min.x + renderer->tile_width / 2;
-                        drawable->dst_rect.min.y -= camera.min.y + renderer->tile_height / 2;
-                        drawable->z_index = e->z_index;
 
-                        text_label_t *label = p->name;
-                        const char *text = (label->text ? label->text : "NULL");
-                        uint32_t len = strlen(text);
-                        
-                        float x = e->rect.min.x + label->offset.x - camera.min.x - renderer->tile_width / 2;
-                        float y = e->rect.min.y + label->offset.y - camera.min.y - renderer->tile_height / 2;
-                        
-                        font_t *font = label->font;
-                        vulkan_texture_t *font_texture = font->texture;
-                        rect_t *glyphs = font->glyphs;
-
-                        for (uint32_t i = 0; i < len; i++)
-                        {
-                            rect_t src = glyphs[text[i] - ' '];
-                            rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
-
-                            drawable_t *drawable = &drawables[drawable_count++];
-                            drawable->tex = font_texture;
-                            drawable->src_rect = src;
-                            drawable->dst_rect = dst;
-                            drawable->z_index = e->z_index;
-
-                            x += src.size.x;
-                        }
-
+                        draw_sprite(drawables, &drawable_count, anim->texture, anim->sprites[current_frame], e->rect, camera, renderer->tile_width, renderer->tile_height, e->z_index, false);
+                        draw_text(drawables, &drawable_count, p->name, e->rect.min, camera, renderer->tile_width, renderer->tile_height, e->z_index, false);
                         break;
                     }
                     case ENTITY_TYPE_TILE:
                     {
                         tile_t *tile = (tile_t*)e->data;
-                        tex = tile->sprite.texture;
-                        src_rect = tile->sprite.src_rect;
-                        drawable_t *drawable = &drawables[drawable_count++];
-                        drawable->tex = tex;
-                        drawable->src_rect = src_rect;
-                        drawable->dst_rect = e->rect;
-                        drawable->dst_rect.min.x -= camera.min.x + renderer->tile_width / 2;
-                        drawable->dst_rect.min.y -= camera.min.y + renderer->tile_height / 2;
-                        drawable->z_index = e->z_index;
+                        draw_sprite(drawables, &drawable_count, tile->sprite.texture, tile->sprite.src_rect, e->rect, camera, renderer->tile_width, renderer->tile_height, e->z_index, false);
                         break;
                     }
                     case ENTITY_TYPE_WEAPON:
                     {
                         weapon_t *weapon = (weapon_t*)e->data;
-                        tex = weapon->sprite.texture;
-                        src_rect = weapon->sprite.src_rect;
-                        drawable_t *drawable = &drawables[drawable_count++];
-                        drawable->tex = tex;
-                        drawable->src_rect = src_rect;
-                        drawable->dst_rect = e->rect;
-                        drawable->dst_rect.min.x -= camera.min.x + renderer->tile_width / 2;
-                        drawable->dst_rect.min.y -= camera.min.y + renderer->tile_height / 2;
-                        drawable->z_index = e->z_index;
+                        draw_sprite(drawables, &drawable_count, weapon->sprite.texture, weapon->sprite.src_rect, e->rect, camera, renderer->tile_width, renderer->tile_height, e->z_index, false);
                         break;
                     }
                     case ENTITY_TYPE_WIDGET:
                     {
                         widget_t *widget = (widget_t*)e->data;
-                        const char *text = (widget->text_label->text ? widget->text_label->text : "NULL");
-                        uint32_t len = strlen(text);
-                        
-                        float x = e->rect.min.x + widget->text_label->offset.x;
-                        float y = e->rect.min.y + widget->text_label->offset.y;
-
-                        font_t *font = widget->text_label->font;
-                        vulkan_texture_t *font_texture = font->texture;
-                        rect_t *glyphs = font->glyphs;
-
-                        for (uint32_t i = 0; i < len; i++)
-                        {
-                            rect_t src = glyphs[text[i] - ' '];
-                            rect_t dst = (rect_t){{x,y},{src.size.x, src.size.y}};
-
-                            drawable_t *drawable = &drawables[drawable_count++];
-                            drawable->tex = font_texture;
-                            drawable->src_rect = src;
-                            drawable->dst_rect = dst;
-                            drawable->z_index = e->z_index;
-
-                            x += src.size.x;
-                        }
+                        draw_text(drawables, &drawable_count, widget->text_label, e->rect.min, camera, renderer->tile_width, renderer->tile_height, e->z_index, true);
                         break;
                     }
                     default: 

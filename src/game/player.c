@@ -3,6 +3,8 @@
 #include "animation.h"
 
 #include "../math/math_utils.h"
+#include "../containers/string.h"
+#include "../logger/logger.h"
 
 #include <assert.h>
 #include <SDL2/SDL.h>

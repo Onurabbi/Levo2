@@ -9,6 +9,7 @@
 #include "renderer/vulkan_renderer.h"
 #include "asset_store/asset_store.h"
 #include "game/game.h"
+#include "time.h"
 
 int main(int argc, char *argv[])
 {

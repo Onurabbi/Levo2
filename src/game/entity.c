@@ -1,10 +1,16 @@
 #include "entity.h"
 #include "collision.h"
+#include "player.h"
+
 #include "../math/math_types.h"
 #include "../game/game_types.h"
+#include "../logger/logger.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+#include <assert.h>
 
 static int compare_collisions(const void *a, const void *b)
 {
@@ -68,4 +74,5 @@ void move_entity(entity_t *e, vec2f_t dp, bulk_data_entity_t *bd)
     e->p.x += dp.x;
     e->p.y += dp.y;
 }
+
 

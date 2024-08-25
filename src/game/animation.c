@@ -1,20 +1,10 @@
 #include "animation.h"
 #include "game_types.h"
+#include "../cJSON/cJSON.h"
 
 #include <string.h>
 #include <assert.h>
 #include <math.h>
-
-entity_state_t get_animation_state_from_string(const char *state_string)
-{
-    if (strcmp(state_string, "idle") == 0) return ENTITY_STATE_IDLE;
-    if (strcmp(state_string, "run") == 0) return ENTITY_STATE_RUN;
-    if (strcmp(state_string, "melee") == 0) return ENTITY_STATE_MELEE;
-    if (strcmp(state_string, "ranged") == 0) return ENTITY_STATE_RANGED;
-    if (strcmp(state_string, "hit") == 0) return ENTITY_STATE_HIT;
-    if (strcmp(state_string, "dead") == 0) return ENTITY_STATE_DEAD;
-    return ENTITY_STATE_MAX;
-}
 
 //! NOTE:Find an animation from an entities chunks, given its state (idle, run etc.)
 //! TODO: This uses linear search, since we're only going to go through 4*8 elements 

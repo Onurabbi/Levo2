@@ -155,7 +155,7 @@ void *memory_alloc(size_t size, memory_tag_t tag)
         {
             mem = memory_map(size);
             assert(mem);
-            break;
+            return mem;
         }
         case MEM_TAG_SIM:
         {
@@ -179,6 +179,7 @@ void *memory_alloc(size_t size, memory_tag_t tag)
         }
     }
     assert(mem);
+    memset(mem, 0, size);
     return mem;
 }
 
