@@ -77,7 +77,7 @@ bool resolve_dyn_rect_vs_rect(rect_t r_dyn,
 
 bool rect_vs_rect(rect_t r1, rect_t r2)
 {
-    if (r1.min.x + r1.size.x < r2.min.x || r1.min.x > r2.min.x + r2.size.x) return false;
-    if (r1.min.y + r1.size.y < r2.min.y || r1.min.y > r2.min.y + r2.size.y) return false;
+    if (r1.min.x + r1.size.x <= r2.min.x || r1.min.x >= r2.min.x + r2.size.x) return false;
+    if (r1.min.y + r1.size.y <= r2.min.y || r1.min.y >= r2.min.y + r2.size.y) return false;
     return true;
 }

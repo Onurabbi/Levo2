@@ -6,6 +6,13 @@
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
+#include <stdint.h>
+
+typedef struct 
+{
+    int32_t x,y;
+}vec2i_t;
+
 typedef struct 
 {
     float x,y;
