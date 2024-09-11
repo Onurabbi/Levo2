@@ -1,9 +1,14 @@
 #include "asset_store.h"
+#include "cJSON.h"
+#include "json_loader.c"
+
 #include "../vulkan_renderer/vulkan_texture.h"
 #include "../logger/logger.h"
 #include "../string/string.h"
 
+#define STB_DS_IMPLEMENTATION
 #include <stb/stb_ds.h>
+
 #include <assert.h>
 
 void asset_store_init(asset_store_t *asset_store)

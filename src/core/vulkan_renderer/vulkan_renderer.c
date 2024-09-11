@@ -1,7 +1,7 @@
 #include "vulkan_renderer.h"
-#include "vulkan_texture.h"
-#include "vulkan_common.h"
-#include "vulkan_buffer.h"
+#include "vulkan_texture.c"
+#include "vulkan_common.c"
+#include "vulkan_buffer.c"
 
 #include "../logger/logger.h"
 #include "../math/math_utils.h"

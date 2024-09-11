@@ -1,23 +1,21 @@
 #include "game.h"
+#include "core/containers/containers.c"
+#include "entity.c"
+#include "player.c"
+#include "widget.c"
 
-#include "entity.h"
-#include "player.h"
+#include "systems/animation.c"
+#include "systems/collision.c"
 
-#include "widget.h"
-
-#include "systems/animation.h"
-#include "systems/collision.h"
-
-#include "core/random/generator.h"
-#include "core/memory/memory.h"
+#include "core/random/generator.c"
+#include "core/memory/memory.c"
 #include "core/logger/logger.h"
-#include "core/string/string.h"
-#include "core/math/math_utils.h"
-#include "core/utils/utils.h"
-#include "core/asset_store/cJSON.h"
-#include "core/asset_store/json_loader.h"
-#include "core/vulkan_renderer/vulkan_buffer.h"
-#include "core/input/input.h"
+#include "core/string/string.c"
+#include "core/math/math_utils.c"
+#include "core/utils/utils.c"
+#include "core/asset_store/asset_store.c"
+#include "core/input/input.c"
+#include "core/vulkan_renderer/vulkan_renderer.c"
 
 #include <time.h>
 #include <SDL2/SDL.h>

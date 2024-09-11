@@ -4,7 +4,7 @@
 #include "../string/string.h"
 #include "../math/math_utils.h"
 #include "../utils/utils.h"
-#include "cJSON.h"
+#include "cJSON.c"
 
 #include <assert.h>
 
