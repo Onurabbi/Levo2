@@ -15,6 +15,7 @@ typedef enum
     MEM_TAG_TEMP = MEM_TAG_SIM,
     MEM_TAG_RENDER,
     MEM_TAG_BULK_DATA,
+    MEM_TAG_HEAP,
     MEM_TAG_UNKNOWN
 }memory_tag_t;
 

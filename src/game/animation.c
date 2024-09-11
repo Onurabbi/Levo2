@@ -15,7 +15,7 @@ static animation_t *get_animation_by_state(animation_chunk_t **animation_chunks,
         animation_chunk_t *chunk = animation_chunks[i];
         for (uint32_t j = 0; j < chunk->count; j++)
         {
-            animation_t *animation = &chunk->animations[j];
+            sprite_animation_t *animation = &chunk->animations[j];
             if (animation->state == state)
             {
                 return animation;
@@ -26,7 +26,7 @@ static animation_t *get_animation_by_state(animation_chunk_t **animation_chunks,
     return NULL;
 }
 
-uint32_t animation_get_current_frame(animation_t *animation, float timer)
+uint32_t animation_get_current_frame(sprite_animation_t *animation, float timer)
 {
     float sec_per_frame = animation->duration / (float)animation->sprite_count;
     return floorf(timer / sec_per_frame);
@@ -34,7 +34,7 @@ uint32_t animation_get_current_frame(animation_t *animation, float timer)
 
 animation_update_result_t animation_update(animation_chunk_t **animation_chunks,
                                            uint32_t            chunk_count,
-                                           animation_t        *current_animation,
+                                           sprite_animation_t *current_animation,
                                            entity_state_t      new_animation_state,
                                            float               delta_time,
                                            float               timer)

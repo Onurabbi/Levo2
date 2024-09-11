@@ -1,8 +1,12 @@
 #include "memory.h"
+#include "heap_alloc.h"
+
 #include "../logger/logger.h"
 
 #include <string.h>
 #include <assert.h>
+#include <stdlib.h>
+#include <stdbool.h>
 
 #if defined (__linux__)
 #include <sys/mman.h>
@@ -13,30 +17,54 @@
 #define SIM_MEMORY_SIZE MEGABYTES(64)
 #define PERMANENT_MEMORY_SIZE MEGABYTES(64)
 #define BULK_DATA_SIZE GIGABYTES(1);
-#define MAX_ALLOCATION_COUNT 256
+#define MAX_MAPPING_COUNT 1024
+
+enum
+{
+    MMAP,
+    MALLOC
+};
+
+static uint32_t heap_sizes[] = {64, 128, 256, 512, 1024, 2048, 4096};
+
+typedef struct
+{
+    int32_t  next;
+    uint32_t size;
+}block_header_t;
+
+typedef struct
+{
+    uint8_t *data;
+    int32_t  free_list;
+    uint32_t block_count;
+    uint32_t block_size;
+}memory_heap_t;
 
 typedef struct 
 {
     uint8_t *base;
-    size_t   used;
-    size_t   capacity;
+    uint32_t used;
+    uint32_t capacity;
 }memory_arena_t;
 
 typedef struct 
 {
     void        *base;
-    size_t       size;
-    memory_tag_t type;
-}allocation_t;
+    uint32_t     size;
+    int          type;
+}mapping_t;
+
+static memory_heap_t heaps[sizeof(heap_sizes)/sizeof(heap_sizes[0])];
 
 static memory_arena_t permanent_arena;
 static memory_arena_t sim_arena;
 static memory_arena_t render_arena;
 
-static allocation_t allocations[MAX_ALLOCATION_COUNT];
-static uint32_t allocation_count;
+static mapping_t mappings[MAX_MAPPING_COUNT];
+static uint32_t mapping_count;
 
-static void *memory_map(size_t size)
+static void *memory_map(uint32_t size)
 {
     void *mem = NULL;
 #if defined (__linux__)
@@ -44,10 +72,14 @@ static void *memory_map(size_t size)
 #else
     //VirtualAlloc(bla,bla);
 #endif
+    mapping_t *mapping = &mappings[mapping_count++];
+    mapping->base = mem;
+    mapping->size = size;
+    mapping->type = MMAP;
     return mem;
 }
 
-void *memory_arena_push_size(memory_arena_t *arena, size_t size)
+static void *memory_arena_push_size(memory_arena_t *arena, uint32_t size)
 {
     void *result = NULL;
     if (arena->used + size <= arena->capacity)
@@ -57,7 +89,6 @@ void *memory_arena_push_size(memory_arena_t *arena, size_t size)
     }
     return result;
 }
-
 
 static const char *memory_tag_string(memory_tag_t tag)
 {
@@ -84,6 +115,11 @@ static const char *memory_tag_string(memory_tag_t tag)
             result = "MEM_TAG_BULK_DATA";
             break;
         }
+        case(MEM_TAG_HEAP):
+        {
+            result = "MEM_TAG_HEAP";
+            break;
+        }
         default:
         {
             result = "NULL";
@@ -95,6 +131,8 @@ static const char *memory_tag_string(memory_tag_t tag)
 
 void memory_init(void)
 {
+    mapping_count = 0;
+
     memset(&permanent_arena, 0, sizeof(permanent_arena));
     memset(&sim_arena, 0, sizeof(sim_arena));
     memset(&render_arena, 0, sizeof(render_arena));
@@ -111,7 +149,14 @@ void memory_init(void)
     render_arena.capacity = RENDER_MEMORY_SIZE;
     render_arena.used     = 0;
 
-    allocation_count      = 0;
+    for (uint32_t i = 0; i < sizeof(heap_sizes)/sizeof(heap_sizes[0]); i++)
+    {
+        memory_heap_t *heap = &heaps[i];
+        heap->block_count = 0;
+        heap->block_size  = heap_sizes[i];
+        heap->data        = memory_map(GIGABYTES(1));
+        heap->free_list   = -1;
+    }
 }
 
 void memory_uninit(void)
@@ -133,20 +178,150 @@ void memory_uninit(void)
     memset(&sim_arena, 0, sizeof(sim_arena));
     memset(&render_arena, 0, sizeof(render_arena));
 
-    for (uint32_t i = 0; i < allocation_count; i++)
+    for (uint32_t i = 0; i < mapping_count; i++)
     {
-        allocation_t allocation = allocations[i];
-        if (munmap(allocation.base, allocation.size) < 0)
+        mapping_t mapping = mappings[i];
+        if (mapping.type == MMAP)
         {
-            LOGE("Unable to deallocate bulk allocation of type: %s", memory_tag_string(allocation.type));
+            if (munmap(mapping.base, mapping.size) < 0)
+            {
+                LOGE("Unable to unmap memory");
+            }
+        }
+        else if (mapping.type == MALLOC)
+        {
+            LOGE("Forgot to deallocate malloced memory %u bytes in size", mapping.size);
+            free(mapping.base);
+        }
+        else
+        {
+            assert(false && "Unknown allocation type");
         }
     }
 
-    memset(allocations, 0, sizeof(allocations));
+    memset(mappings, 0, sizeof(mappings));
     LOGI("Uninitialised all memory");
 }
 
-void *memory_alloc(size_t size, memory_tag_t tag)
+static int32_t index_of_block(block_header_t *header, memory_heap_t *heap)
+{
+    ptrdiff_t diff_bytes = (uint8_t*)header - heap->data;
+    return (int32_t)(diff_bytes / (sizeof(block_header_t) + heap->block_size));
+}
+
+static inline block_header_t *block_at_index(memory_heap_t *heap, int32_t index)
+{
+    return (block_header_t *)&heap->data[index * (sizeof(block_header_t) + heap->block_size)];
+}
+
+static inline void *data_at_index(memory_heap_t *heap, int32_t index)
+{
+    return (&heap->data[index * (sizeof(block_header_t) + heap->block_size) + sizeof(block_header_t)]);
+}
+
+#if 0
+static inline uint32_t align(uint32_t size)
+{
+    return (size + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
+}
+#endif
+
+static inline block_header_t *get_header(void *ptr)
+{
+    return (block_header_t*)((uint8_t*)ptr - sizeof(block_header_t));
+}
+
+static memory_heap_t *select_heap(uint32_t size)
+{
+    for (uint32_t i = 0; i < sizeof(heaps)/sizeof(heaps[0]); i++)
+    {
+        memory_heap_t *heap = &heaps[i];
+        if (size <= heap->block_size)
+        {
+            return heap;
+        }
+    }
+
+    return NULL; //malloc-free
+}
+
+void heap_free(void *ptr, uint32_t size)
+{
+    memory_heap_t *heap = select_heap(size);
+    if (!heap)
+    {
+        bool found = false;
+        //! NOTE: This uses linear search now. change this to a hash map or something if it is a problem
+        for (uint32_t i = 0; i < mapping_count; i++)
+        {
+            mapping_t *mapping = &mappings[i];
+            if (mapping->base == ptr)
+            {
+                found = true;
+                *mapping = mappings[mapping_count - 1];
+                mapping_count--;
+                break;
+            }
+        }
+        assert(found && "unable to find the memory provided in the allocation list");
+        free(ptr);
+        return;
+    }
+
+    block_header_t *header = get_header(ptr);
+    header->next = heap->free_list;
+    heap->free_list = index_of_block(header, heap);
+}
+
+void *heap_alloc(uint32_t size)
+{
+    //select heap first
+    memory_heap_t *heap = select_heap(size);
+
+    if (!heap)
+    {
+        mapping_t *mapping = &mappings[mapping_count++];
+        mapping->base = malloc(size);
+        mapping->size = size;
+        mapping->type = MALLOC;
+        return mapping->base;
+    }
+
+    void *ptr = NULL;
+
+    if (heap->free_list > -1)
+    {
+        block_header_t *header = block_at_index(heap, heap->free_list);
+        ptr = &header[1];
+        heap->free_list = header->next;
+        header->next = -1;
+    }
+    else
+    {
+        ptr = data_at_index(heap, heap->block_count);
+        heap->block_count++;
+    }
+    return ptr;
+}
+
+void memory_dealloc(void *memory, uint32_t size, memory_tag_t tag)
+{
+    switch(tag)
+    {
+        case MEM_TAG_HEAP:
+        {
+            heap_free(memory, size);
+            break;
+        }
+        default:
+        {
+            LOGE("Unable to deallocate memory other than MEM_TAG_HEAP");
+            break;
+        }
+    }
+}
+
+void *memory_alloc(uint32_t size, memory_tag_t tag)
 {
     void *mem = NULL;
     switch(tag)
@@ -170,6 +345,12 @@ void *memory_alloc(size_t size, memory_tag_t tag)
         case MEM_TAG_RENDER:
         {
             mem = memory_arena_push_size(&render_arena, size);
+            break;
+        }
+        case MEM_TAG_HEAP:
+        {
+            LOGI("Allocating size: %u", size);
+            mem = heap_alloc(size);
             break;
         }
         default:

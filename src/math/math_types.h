@@ -15,6 +15,16 @@ typedef struct
 
 typedef struct 
 {
+    int32_t x,y,z;
+}vec3i_t;
+
+typedef struct 
+{
+    int32_t x,y,z,w;
+}vec4i_t;
+
+typedef struct 
+{
     float x,y;
 }vec2f_t;
 
@@ -38,6 +48,11 @@ typedef struct
     vec2f_t min;
     vec2f_t size;
 }rect_t;
+
+typedef struct
+{
+    float x,y,z,w;
+}quat_t;
 
 #endif
 

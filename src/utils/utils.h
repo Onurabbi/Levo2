@@ -6,7 +6,9 @@
 #define bit_check(num,bit) ((1ULL << (bit)) & (num))
 #define bit_flip(num,bit) ((1ULL << (bit)) ^ (num))
 
-char *read_whole_file(const char *file_path, long *size);
+#include "../memory/memory_types.h"
+
+char *read_whole_file(const char *file_path, long *size, memory_tag_t tag);
 
 #endif
 
