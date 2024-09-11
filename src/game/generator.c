@@ -277,8 +277,6 @@ static void connect_regions(grid_t *grid)
             uint8_t to   = head->region;
             uint8_t from = (uint8_t)(i + 1);
 
-            LOGI("Found connection from %hhu to %hhu and deleting all other connections",from,to);
-
             //make this point a floor
             grid_set(grid, head->p.y, head->p.x, (grid_tile_t){FLOOR, from});
             //delete from->to

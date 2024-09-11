@@ -559,7 +559,7 @@ static void create_framebuffers(vulkan_renderer_t *renderer)
 static VkShaderModule create_shader_module(VkDevice device, const char* filePath)
 {
     long fsize;
-    char *data = read_whole_file(filePath, &fsize);
+    char *data = read_whole_file(filePath, &fsize, MEM_TAG_TEMP);
     
     VkShaderModule result;
     VkShaderModuleCreateInfo shaderModule = {};
@@ -1001,7 +1001,7 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
                     case ENTITY_TYPE_PLAYER:
                     {
                         player_t *p = (player_t*)e->data;
-                        animation_t *anim = p->current_animation;
+                        sprite_animation_t *anim = p->current_animation;
                         uint32_t current_frame = animation_get_current_frame(anim, p->anim_timer);
 
                         draw_sprite(drawables, &drawable_count, anim->texture, anim->sprites[current_frame], e->rect, camera, renderer->tile_width, renderer->tile_height, e->z_index, false);
@@ -1093,6 +1093,10 @@ static uint32_t vulkan_renderer_render_entities(vulkan_renderer_t *renderer,
 
 static void vulkan_renderer_present(vulkan_renderer_t *renderer, vertex_t *vertices, uint32_t vertex_count)
 {
+    if (renderer->current_texture == 0)
+    {
+        return;
+    }
     //update vertex buffer
     memcpy(renderer->vertex_buffers[renderer->current_frame].mapped, vertices, sizeof(vertex_t) * vertex_count);
 
@@ -1137,8 +1141,8 @@ static void vulkan_renderer_present(vulkan_renderer_t *renderer, vertex_t *verti
     {
         uint64_t next_offset = (i < (renderer->current_texture) ? renderer->offsets[i + 1] : vertex_count);
 
-        uint64_t vertex_count = next_offset - renderer->offsets[i];
-        uint64_t index_count  = vertex_count * 6 / 4;
+        uint64_t vert_count = next_offset - renderer->offsets[i];
+        uint64_t index_count  = vert_count * 6 / 4;
 
         vkCmdBindDescriptorSets(renderer->command_buffers[renderer->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->pipeline_layout, 0, 1, &renderer->textures[i]->descriptor_sets[renderer->current_frame],0,NULL);
         vkCmdDrawIndexed(renderer->command_buffers[renderer->current_frame], index_count, 1, first_index, 0, 0);
