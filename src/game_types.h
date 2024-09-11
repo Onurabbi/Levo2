@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include "../core/containers/container_types.h"
-#include "../asset_store/asset_store.h"
+#include "core/containers/container_types.h"
+#include "core/asset_store/asset_store.h"
 
 #define MAX_SPRITES_PER_ANIMATION 8
 #define MAX_ANIMATIONS_PER_CHUNK  8

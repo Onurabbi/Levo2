@@ -3,13 +3,7 @@
 #define STB_DS_IMPLEMENTATION
 #include <stb/stb_ds.h>
 
-#include "core/containers/containers.h"
-#include "logger/logger.h"
-#include "renderer/vulkan_texture.h"
-#include "renderer/vulkan_renderer.h"
-#include "asset_store/asset_store.h"
-#include "game/game.h"
-#include "time.h"
+#include "game.h"
 
 int main(int argc, char *argv[])
 {

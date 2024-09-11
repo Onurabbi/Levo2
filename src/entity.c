@@ -1,10 +1,11 @@
 #include "entity.h"
-#include "collision.h"
-#include "player.h"
 
-#include "../math/math_types.h"
-#include "../game/game_types.h"
-#include "../logger/logger.h"
+#include "player.h"
+#include "game_types.h"
+
+#include "systems/collision.h"
+#include "core/math/math_types.h"
+#include "core/logger/logger.h"
 
 #include <math.h>
 #include <stdlib.h>

@@ -2,7 +2,7 @@
 #define VULKAN_TYPES_H_
 
 #include <vulkan/vulkan.h>
-#include "../core/containers/container_types.h"
+#include "../containers/container_types.h"
 #include "../math/math_types.h"
 
 #define MAX_FRAMES_IN_FLIGHT   2

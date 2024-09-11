@@ -1,6 +1,7 @@
 #include "animation.h"
-#include "game_types.h"
-#include "../cJSON/cJSON.h"
+
+#include "../game_types.h"
+#include "../core/asset_store/cJSON.h"
 
 #include <string.h>
 #include <assert.h>

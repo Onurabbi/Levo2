@@ -1,10 +1,10 @@
 #include "player.h"
 #include "entity.h"
-#include "animation.h"
 
-#include "../math/math_utils.h"
-#include "../containers/string.h"
-#include "../logger/logger.h"
+#include "systems/animation.h"
+#include "core/math/math_utils.h"
+#include "core/string/string.h"
+#include "core/logger/logger.h"
 
 #include <assert.h>
 #include <SDL2/SDL.h>

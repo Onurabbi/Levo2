@@ -1,7 +1,7 @@
 #ifndef ANIMATION_H_
 #define ANIMATION_H_
 
-#include "game_types.h"
+#include "../game_types.h"
 
 struct cJSON;
 

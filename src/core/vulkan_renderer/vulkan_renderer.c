@@ -5,12 +5,13 @@
 
 #include "../logger/logger.h"
 #include "../math/math_utils.h"
-#include "../game/game_types.h"
-#include "../game/collision.h"
-#include "../core/containers/containers.h"
-#include "../game/animation.h"
 #include "../memory/memory.h"
 #include "../utils/utils.h"
+#include "../containers/containers.h"
+
+#include "../../game_types.h"
+#include "../../systems/collision.h" 
+#include "../../systems/animation.h"
 
 #include <math.h>
 

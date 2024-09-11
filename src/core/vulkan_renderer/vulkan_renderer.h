@@ -2,7 +2,7 @@
 #define VULKAN_RENDERER_H_
 
 #include "vulkan_types.h"
-#include "../game/game_types.h"
+#include "../../game_types.h"
 
 #include <SDL2/SDL.h>
 

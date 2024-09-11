@@ -1,7 +1,8 @@
 #include "collision.h"
-#include "../math/math_utils.h"
-#include "../logger/logger.h"
-#include "game_types.h"
+
+#include "../core/math/math_utils.h"
+#include "../core/logger/logger.h"
+#include "../game_types.h"
 
 #include <math.h>
 #include <stdint.h>

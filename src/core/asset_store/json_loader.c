@@ -1,10 +1,10 @@
 #include "json_loader.h"
-#include "../game/game.h"
+#include "../../game.h"
 #include "../logger/logger.h"
-#include "../core/containers/string.h"
+#include "../string/string.h"
 #include "../math/math_utils.h"
 #include "../utils/utils.h"
-#include "../cJSON/cJSON.h"
+#include "cJSON.h"
 
 #include <assert.h>
 

@@ -2,7 +2,7 @@
 #define PLAYER_H_
 
 #include "game_types.h"
-#include "../cJSON/cJSON.h"
+#include "core/asset_store/cJSON.h"
 
 void update_player(entity_t              *e, 
                    input_t               *input, 
