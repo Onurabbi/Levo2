@@ -147,6 +147,30 @@ typedef struct
 }model_t;
 #endif
 
+static inline float json_get_float(cJSON *node, const char *str)
+{
+    return cJSON_GetNumberValue(cJSON_GetObjectItem(node, str));
+}
+
+static inline uint32_t json_get_uint32(cJSON *node, const char *str)
+{
+    uint32_t result = UINT32_MAX;
+
+    cJSON *child = cJSON_GetObjectItem(node, str);
+    if (child)
+    {
+        double num = cJSON_GetNumberValue(child);
+        if (num == NAN)
+        {
+            result = UINT32_MAX;
+        }
+        else
+        {
+            result = (uint32_t)num;
+        }
+    }
+    return result;
+}
 
 static void set_push(uint32_t *set, uint32_t *p_count, uint32_t num)
 {
@@ -288,22 +312,11 @@ gltf_model_t *model_load_from_gltf(const char * path)
         }
 
         //skin
-        model_node->skin = UINT32_MAX;
-        cJSON* skin_node = cJSON_GetObjectItem(node, "skin");
-        if (skin_node)
-        {
-            model_node->skin = cJSON_GetNumberValue(skin_node);
-        }
+        model_node->skin = json_get_uint32(node, "skin");
 
         //mesh
-        model_node->mesh = UINT32_MAX;
-        cJSON* mesh_node = cJSON_GetObjectItem(node, "mesh");
-        if (mesh_node)
-        {
-            model_node->mesh = cJSON_GetNumberValue(mesh_node);
-        }
+        model_node->mesh = json_get_uint32(node, "mesh");
     }
-
     //we need to load the actual data here
 
     //cache buffers
@@ -317,7 +330,7 @@ gltf_model_t *model_load_from_gltf(const char * path)
         gltf_buffer_t *buffer   = &gltf_model->buffers[i];
         const char *uri = cJSON_GetStringValue(cJSON_GetObjectItem(buffer_node, "uri"));
         const char *binary_path = string_concatenate("./assets/models/cesium_man/", uri, MEM_TAG_TEMP);
-        buffer->size = cJSON_GetNumberValue(cJSON_GetObjectItem(buffer_node, "byteLength"));
+        buffer->size = json_get_uint32(buffer_node, "byteLength");
         long size;
         buffer->data = read_whole_file(binary_path, &size, MEM_TAG_TEMP);
     }
@@ -332,11 +345,11 @@ gltf_model_t *model_load_from_gltf(const char * path)
         cJSON *accessor_node = cJSON_GetArrayItem(accessors_node, i);
 
         gltf_accessor_t *accessor = &gltf_model->accessors[i];
-        accessor->buffer_view = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(accessor_node, "bufferView"));
-        accessor->byte_offset = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(accessor_node, "byteOffset"));
-        accessor->component_type = cJSON_GetNumberValue(cJSON_GetObjectItem(accessor_node, "componentType"));
+        accessor->buffer_view = json_get_uint32(accessor_node, "bufferView");
+        accessor->byte_offset = json_get_uint32(accessor_node, "byteOffset");
+        accessor->component_type = json_get_uint32(accessor_node, "componentType");
         accessor->type = value_type_from_string(cJSON_GetStringValue(cJSON_GetObjectItem(accessor_node, "type")));
-        accessor->count = (uint32_t)cJSON_GetNumberValue(cJSON_GetObjectItem(accessor_node, "count"));
+        accessor->count = json_get_uint32(accessor_node, "count");
     }
 
     //cache bufferviews 
@@ -349,11 +362,11 @@ gltf_model_t *model_load_from_gltf(const char * path)
         cJSON *buffer_view_node = cJSON_GetArrayItem(buffer_views_node, i);
 
         gltf_buffer_view_t *buffer_view = &gltf_model->buffer_views[i];
-        buffer_view->buffer = cJSON_GetNumberValue(cJSON_GetObjectItem(buffer_view_node, "buffer"));
-        buffer_view->byte_offset = cJSON_GetNumberValue(cJSON_GetObjectItem(buffer_view_node, "byteOffset"));
-        buffer_view->byte_length = cJSON_GetNumberValue(cJSON_GetObjectItem(buffer_view_node, "byteLength"));
-        buffer_view->byte_stride = cJSON_GetNumberValue(cJSON_GetObjectItem(buffer_view_node, "byteStride"));
-        buffer_view->target = cJSON_GetNumberValue(cJSON_GetObjectItem(buffer_view_node, "target"));
+        buffer_view->buffer      = json_get_uint32(buffer_view_node, "buffer");
+        buffer_view->byte_offset = json_get_uint32(buffer_view_node, "byteOffset");
+        buffer_view->byte_length = json_get_uint32(buffer_view_node, "byteLength");
+        buffer_view->byte_stride = json_get_uint32(buffer_view_node, "byteStride");
+        buffer_view->target      = json_get_uint32(buffer_view_node, "target");
     }
     
     //load meshes
@@ -370,23 +383,24 @@ gltf_model_t *model_load_from_gltf(const char * path)
         mesh->name = string_duplicate(mesh_name, MEM_TAG_TEMP);
 
         cJSON *primitives_node = cJSON_GetArrayItem(mesh_node, 0);
-        int primitive_count = cJSON_GetArraySize(primitives_node);
-        if (primitive_count > 1)
+        mesh->primitive_count = cJSON_GetArraySize(primitives_node);
+        assert(mesh->primitive_count <= 4);
+
+        for (int j = 0; j < mesh->primitive_count; j++)
         {
-            assert(false && "Mesh has more than one primitive");
+            cJSON *primitive_node = cJSON_GetArrayItem(primitives_node, j);
+
+            cJSON *attributes_node        = cJSON_GetObjectItem(primitive_node, "attributes");
+            mesh->primitives[j].joints    = json_get_uint32(attributes_node, "JOINTS_0");
+            mesh->primitives[j].normal    = json_get_uint32(attributes_node, "NORMAL");
+            mesh->primitives[j].tex_coord = json_get_uint32(attributes_node, "TEXCOORD_0");
+            mesh->primitives[j].position  = json_get_uint32(attributes_node, "POSITION");
+            mesh->primitives[j].weights   = json_get_uint32(attributes_node, "WEIGHTS_0");
+
+            mesh->primitives[j].indices  = json_get_uint32(primitive_node, "indices");
+            mesh->primitives[j].mode     = json_get_uint32(primitive_node, "mode");
+            mesh->primitives[j].material = json_get_uint32(primitive_node, "material"); 
         }
-        cJSON *primitive_node = cJSON_GetArrayItem(primitives_node, 0);
-
-        cJSON *attributes_node    = cJSON_GetObjectItem(primitive_node, "attributes");
-        mesh->primitive.joints    = cJSON_GetNumberValue(cJSON_GetObjectItem(attributes_node, "JOINTS_0"));
-        mesh->primitive.normal    = cJSON_GetNumberValue(cJSON_GetObjectItem(attributes_node, "NORMAL"));
-        mesh->primitive.tex_coord = cJSON_GetNumberValue(cJSON_GetObjectItem(attributes_node, "TEXCOORD_0"));
-        mesh->primitive.position  = cJSON_GetNumberValue(cJSON_GetObjectItem(attributes_node, "POSITION"));
-        mesh->primitive.weights   = cJSON_GetNumberValue(cJSON_GetObjectItem(attributes_node, "WEIGHTS_0"));
-
-        mesh->primitive.indices  = cJSON_GetNumberValue(cJSON_GetObjectItem(primitive_node, "indices"));
-        mesh->primitive.mode     = cJSON_GetNumberValue(cJSON_GetObjectItem(primitive_node, "mode"));
-        mesh->primitive.material = cJSON_GetNumberValue(cJSON_GetObjectItem(primitive_node, "material")); 
     }
 
     //index count
@@ -398,43 +412,46 @@ gltf_model_t *model_load_from_gltf(const char * path)
 
     for (uint32_t i = 0; i < gltf_model->mesh_count; i++)
     {
-        //vertices
-        uint32_t *unique_bvs = memory_alloc(sizeof(uint32_t) * 5, MEM_TAG_TEMP);
-        uint32_t unique_bv_count = 0;
-
-        uint32_t accessor_index = gltf_model->meshes[i].primitive.joints;
-        gltf_accessor_t *accessor = &gltf_model->accessors[accessor_index];
-        set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
-        gltf_model->vertex_counts[i] = accessor->count;
-
-        accessor_index = gltf_model->meshes[i].primitive.normal;
-        accessor = &gltf_model->accessors[accessor_index];
-        set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
-
-        accessor_index = gltf_model->meshes[i].primitive.tex_coord;
-        accessor = &gltf_model->accessors[accessor_index];
-        set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
-
-        accessor_index = gltf_model->meshes[i].primitive.position;
-        accessor = &gltf_model->accessors[accessor_index];
-        set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
-
-        accessor_index = gltf_model->meshes[i].primitive.weights;
-        accessor = &gltf_model->accessors[accessor_index];
-        set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
-
-        for (uint32_t j = 0; j < unique_bv_count; j++)
+        for (uint32_t j = 0; j < gltf_model->meshes[i].primitive_count; j++)
         {
-            gltf_buffer_view_t *bv = &gltf_model->buffer_views[unique_bvs[j]];
-            gltf_model->vertices_byte_lengths[i] += bv->byte_length; 
-        }
-        
-        //indices
-        accessor_index = gltf_model->meshes[i].primitive.indices;
-        gltf_model->index_counts[i] = gltf_model->accessors[accessor_index].count;
+            //vertices
+            uint32_t *unique_bvs = memory_alloc(sizeof(uint32_t) * 5, MEM_TAG_TEMP);
+            uint32_t unique_bv_count = 0;
 
-        gltf_buffer_view_t* bv = &gltf_model->buffer_views[gltf_model->accessors[accessor_index].buffer_view];
-        gltf_model->indices_byte_lengths[i] = bv->byte_length;
+            uint32_t accessor_index = gltf_model->meshes[i].primitives[j].joints;
+            gltf_accessor_t *accessor = &gltf_model->accessors[accessor_index];
+            set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
+            gltf_model->vertex_counts[i] = accessor->count;
+
+            accessor_index = gltf_model->meshes[i].primitives[j].normal;
+            accessor = &gltf_model->accessors[accessor_index];
+            set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
+
+            accessor_index = gltf_model->meshes[i].primitives[j].tex_coord;
+            accessor = &gltf_model->accessors[accessor_index];
+            set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
+
+            accessor_index = gltf_model->meshes[i].primitives[j].position;
+            accessor = &gltf_model->accessors[accessor_index];
+            set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
+
+            accessor_index = gltf_model->meshes[i].primitives[j].weights;
+            accessor = &gltf_model->accessors[accessor_index];
+            set_push(unique_bvs, &unique_bv_count, accessor->buffer_view);
+
+            for (uint32_t j = 0; j < unique_bv_count; j++)
+            {
+                gltf_buffer_view_t *bv = &gltf_model->buffer_views[unique_bvs[j]];
+                gltf_model->vertices_byte_lengths[i] += bv->byte_length; 
+            }
+            
+            //indices
+            accessor_index = gltf_model->meshes[i].primitives[j].indices;
+            gltf_model->index_counts[i] = gltf_model->accessors[accessor_index].count;
+
+            gltf_buffer_view_t* bv = &gltf_model->buffer_views[gltf_model->accessors[accessor_index].buffer_view];
+            gltf_model->indices_byte_lengths[i] = bv->byte_length;
+        }
     }
     
     //load animations
@@ -459,10 +476,10 @@ gltf_model_t *model_load_from_gltf(const char * path)
 
             gltf_channel_t *channel = &animation->channels[j];
 
-            channel->sampler = cJSON_GetNumberValue(cJSON_GetObjectItem(channel_node, "sampler"));
+            channel->sampler = json_get_uint32(channel_node, "sampler");
             const char *path = cJSON_GetStringValue(cJSON_GetObjectItem(target_node, "path"));
             channel->path    = path_from_string(path);
-            channel->node    = cJSON_GetNumberValue(cJSON_GetObjectItem(target_node, "node"));
+            channel->node    = json_get_uint32(target_node, "node");
         }
 
         cJSON *samplers_node = cJSON_GetObjectItem(animation_node, "samplers");
@@ -474,8 +491,8 @@ gltf_model_t *model_load_from_gltf(const char * path)
             cJSON *sampler_node = cJSON_GetArrayItem(samplers_node, j);
             gltf_animation_sampler_t *sampler = &animation->samplers[j];
 
-            sampler->input = cJSON_GetNumberValue(cJSON_GetObjectItem(sampler_node, "input"));
-            sampler->output = cJSON_GetNumberValue(cJSON_GetObjectItem(sampler_node, "output"));
+            sampler->input = json_get_uint32(sampler_node, "input");
+            sampler->output = json_get_uint32(sampler_node, "output");
             const char *interpolation = cJSON_GetStringValue(cJSON_GetObjectItem(sampler_node, "interpolation"));
             sampler->interpolation = interpolation_from_string(interpolation);
         }
@@ -491,8 +508,8 @@ gltf_model_t *model_load_from_gltf(const char * path)
         cJSON *skin_node       = cJSON_GetArrayItem(skins_node, i);
 
         gltf_skin_t *gltf_skin = &gltf_model->skins[i];
-        gltf_skin->inverse_bind_matrices = cJSON_GetNumberValue(cJSON_GetObjectItem(skin_node, "inverseBindMatrices"));
-        gltf_skin->skeleton = cJSON_GetNumberValue(cJSON_GetObjectItem(skin_node, "skeleton"));
+        gltf_skin->inverse_bind_matrices = json_get_uint32(skin_node, "inverseBindMatrices");
+        gltf_skin->skeleton = json_get_uint32(skin_node, "skeleton");
 
         cJSON *joints_node = cJSON_GetObjectItem(skin_node, "joints");
         gltf_skin->joint_count = cJSON_GetArraySize(joints_node);
@@ -500,7 +517,7 @@ gltf_model_t *model_load_from_gltf(const char * path)
 
         for (uint32_t j = 0; j < gltf_skin->joint_count; j++)
         {
-            gltf_skin->joints[j] = cJSON_GetNumberValue(cJSON_GetArrayItem(joints_node, j));
+            gltf_skin->joints[j] = (uint32_t)cJSON_GetNumberValue(cJSON_GetArrayItem(joints_node, j));
         }
         const char *name = cJSON_GetStringValue(cJSON_GetObjectItem(skin_node, "name"));
         gltf_skin->name = string_duplicate(name, MEM_TAG_TEMP);
@@ -518,9 +535,9 @@ gltf_model_t *model_load_from_gltf(const char * path)
 
         cJSON *pbr_mr_node = cJSON_GetObjectItem(material_node, "pbrMetallicRoughness");
         cJSON *base_color_texture_node = cJSON_GetObjectItem(pbr_mr_node, "baseColorTexture");
-        material->pbr_metallic_roughness.base_color_texture_index = cJSON_GetNumberValue(cJSON_GetObjectItem(base_color_texture_node, "index"));
-        material->pbr_metallic_roughness.tex_coord = cJSON_GetNumberValue(cJSON_GetObjectItem(base_color_texture_node, "texCoord"));
-        material->pbr_metallic_roughness.metallic_factor = cJSON_GetNumberValue(cJSON_GetObjectItem(pbr_mr_node, "metallicFactor"));
+        material->pbr_metallic_roughness.base_color_texture_index = json_get_uint32(base_color_texture_node, "index");
+        material->pbr_metallic_roughness.tex_coord = json_get_uint32(base_color_texture_node, "texCoord");
+        material->pbr_metallic_roughness.metallic_factor =  json_get_float(pbr_mr_node, "metallicFactor");
 
         cJSON *base_color_factor_node = cJSON_GetObjectItem(pbr_mr_node, "baseColorFactor");
         material->pbr_metallic_roughness.base_color_factor.x = cJSON_GetNumberValue(cJSON_GetArrayItem(base_color_factor_node, 0));
@@ -537,7 +554,7 @@ gltf_model_t *model_load_from_gltf(const char * path)
         material->name = string_duplicate(name, MEM_TAG_TEMP);
 
         material->alpha_mode = alpha_mode_from_string(cJSON_GetStringValue(cJSON_GetObjectItem(material_node, "alphaMode")));
-        material->double_sided = cJSON_GetNumberValue(cJSON_GetObjectItem(material_node, "doubleSided"));
+        material->double_sided = json_get_uint32(material_node, "doubleSided");
     }
 
     //textures
@@ -549,8 +566,8 @@ gltf_model_t *model_load_from_gltf(const char * path)
     {
         cJSON *texture_node = cJSON_GetArrayItem(textures_node, i);
         gltf_texture_t *texture = &gltf_model->textures[i];
-        texture->sampler = cJSON_GetNumberValue(cJSON_GetObjectItem(texture_node, "sampler"));
-        texture->source  = cJSON_GetNumberValue(cJSON_GetObjectItem(texture_node, "source"));
+        texture->sampler = json_get_uint32(texture_node, "sampler");
+        texture->source  = json_get_uint32(texture_node, "source");
     }
 
     //images
@@ -574,10 +591,10 @@ gltf_model_t *model_load_from_gltf(const char * path)
     {
         cJSON *sampler_node = cJSON_GetArrayItem(samplers_node, i);
         gltf_sampler_t *sampler = &gltf_model->samplers[i];
-        sampler->mag_filter = cJSON_GetNumberValue(cJSON_GetObjectItem(sampler_node, "magFilter"));
-        sampler->min_filter = cJSON_GetNumberValue(cJSON_GetObjectItem(sampler_node, "minFilter"));
-        sampler->wrap_s     = cJSON_GetNumberValue(cJSON_GetObjectItem(sampler_node, "wrapS"));
-        sampler->wrap_t     = cJSON_GetNumberValue(cJSON_GetObjectItem(sampler_node, "wrapT"));
+        sampler->mag_filter = json_get_uint32(sampler_node, "magFilter");
+        sampler->min_filter = json_get_uint32(sampler_node, "minFilter");
+        sampler->wrap_s     = json_get_uint32(sampler_node, "wrapS");
+        sampler->wrap_t     = json_get_uint32(sampler_node, "wrapT");
     }
 
     LOGI("Success");

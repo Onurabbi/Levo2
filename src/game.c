@@ -79,6 +79,24 @@ static void load_node(gltf_model_t *gltf_model,
     }
 }
 
+static void load_nodes(gltf_model_t *gltf_model, model_t *model)
+{
+    model->node_count = gltf_model->node_count;
+    model->nodes = memory_alloc(sizeof(model_node_t) * model->node_count, MEM_TAG_HEAP);
+
+    gltf_scene_t *scene = &gltf_model->scenes[0];
+    for (uint32_t i = 0; i < scene->node_count; i++)
+    {
+        uint32_t node_index = scene->nodes[i];
+        load_node(gltf_model, 
+                  model,
+                  &gltf_model->nodes[node_index], 
+                  &model->nodes[node_index], 
+                  UINT32_MAX, 
+                  node_index);
+    }
+}
+
 static void load_skins(gltf_model_t *gltf_model, model_t *model, vulkan_renderer_t *renderer)
 {
     model->skin_count = gltf_model->skin_count;
@@ -214,26 +232,68 @@ static void load_animations(gltf_model_t *gltf_model, model_t *model)
     }
 }
 
-static void update_joints(model_t *model, model_node_t *node, vulkan_renderer_t *renderer)
+static void get_node_matrix(model_t *model, model_node_t *model_node, mat4f_t *out)
 {
+    mat4f_t node_matrix = model_node->local_transform;
+    uint32_t current_parent = model_node->parent;
+    while (current_parent != UINT32_MAX)
+    {
+        model_node_t *parent_node = &model->nodes[current_parent];
+        mat4f_t temp = node_matrix;
+        mat4_multiply(&parent_node->local_transform, &temp, &node_matrix);
+        current_parent = parent_node->parent;
+    }
+    *out = node_matrix;
 }
 
-static void setup(game_t *game)
+static void update_joints(model_t *model, vulkan_renderer_t *renderer)
 {
-    //create fps entity
-    gltf_model_t *gltf_model = model_load_from_gltf("./assets/models/cesium_man/cesium_man.gltf");
+    for (uint32_t i = 0; i < model->node_count; i++)
+    {
+        model_node_t *root = &model->nodes[i];
+        if (root->skin != UINT32_MAX)
+        {
+            mat4f_t local_transform = {0};
+            get_node_matrix(model, root, &local_transform);
 
-    model_t model;
-    //we have the input, now load images
-    model_load_textures(gltf_model, &model, &game->asset_store, &game->renderer);
-    model_load_materials(gltf_model, &model);
+            mat4f_t inverse_transform = {0};
+            mat4_inverse(&local_transform, &inverse_transform);
 
+            skin_t *skin = &model->skins[root->skin];
+            uint32_t joint_count    = skin->joint_count;
+            mat4f_t *joint_matrices = memory_alloc(joint_count * sizeof(mat4f_t), MEM_TAG_TEMP);
+
+            for (uint32_t j = 0; j < joint_count; j++)
+            {
+                model_node_t *joint = &model->nodes[skin->joints[j]];
+
+                mat4f_t joint_mat = {0};
+                get_node_matrix(model, joint, &joint_mat);
+
+                mat4f_t temp = mat4_identity();
+                mat4_multiply(&joint_mat, &skin->inverse_bind_matrices[j], &temp);
+                mat4_multiply(&inverse_transform, &temp, &joint_matrices[j]);
+            }
+            memcpy(skin->ssbo.mapped, joint_matrices, joint_count * sizeof(mat4f_t));
+        }
+    }
+}
+
+static void load_meshes(gltf_model_t *gltf_model, model_t *model)
+{
+    model->mesh_count = gltf_model->mesh_count;
+    model->meshes = memory_alloc(model->mesh_count * sizeof(model->mesh_count), MEM_TAG_HEAP);
+    for (uint32_t i = 0; i < model->mesh_count; i++)
+    {
+        model->meshes[i].primitive_count = gltf_model->meshes[i].primitive_count;
+    }
     //allocate vertex and index buffers
     //calculate total buffer size and number of indices
-    uint32_t index_buffer_size = 0;
-    size_t index_count = 0;
+    uint32_t index_buffer_size  = 0;
+    size_t index_count          = 0;
     uint32_t vertex_buffer_size = 0;
-    size_t vertex_count = 0;
+    size_t vertex_count         = 0;
+
     for (uint32_t i = 0; i < gltf_model->mesh_count; i++)
     {
         index_buffer_size += gltf_model->indices_byte_lengths[i];
@@ -247,57 +307,173 @@ static void setup(game_t *game)
     uint8_t *vertex_buffer = memory_alloc(vertex_buffer_size, MEM_TAG_TEMP);
     uint8_t *index_buffer  = memory_alloc(index_buffer_size, MEM_TAG_TEMP);
     
-    model.node_count = gltf_model->node_count;
-    model.nodes = memory_alloc(sizeof(model_node_t) * model.node_count, MEM_TAG_HEAP);
+    index_count  = 0;
+    vertex_count = 0;
 
-    gltf_scene_t *scene = &gltf_model->scenes[0];
-    for (uint32_t i = 0; i < scene->node_count; i++)
+    for (uint32_t i = 0; i < model->mesh_count; i++)
     {
-        uint32_t node_index = scene->nodes[i];
-        load_node(gltf_model, 
-                  &model,
-                  &gltf_model->nodes[node_index], 
-                  &model.nodes[node_index], 
-                  UINT32_MAX, 
-                  node_index);
-    }
+        gltf_mesh_t *gltf_mesh = &gltf_model->meshes[i];
+        mesh_t *mesh = &model->meshes[i];
 
-    load_skins(gltf_model, &model, &game->renderer);
-    load_animations(gltf_model, &model);
-    mat4f_t mat = {0};
-    uint32_t i = 0;
-    for (uint32_t row = 0; row < 4; row++)
-    {
-        for (uint32_t col = 0; col < 4; col++)
+        for (uint32_t j = 0; j < mesh->primitive_count; j++)
         {
-            mat.m[row][col] = i++;
+            gltf_mesh_primitive_t *gltf_primitive = &gltf_mesh->primitives[j];
+            primitive_t *primitive = &mesh->primitives[j];
+
+            uint32_t first_index      = index_count;
+            uint32_t vertex_start     = vertex_count;
+            uint32_t prim_index_count = 0;
+            bool has_skin = false;
+
+            {
+                const float *position_buffer         = NULL;
+                const float *normals_buffer          = NULL;
+                const float *tex_coords_buffer       = NULL;
+                const uint16_t *joint_indices_buffer = NULL;
+                const float *joint_weights_buffer    = NULL;
+                uint32_t prim_vertex_count           = 0; 
+                if (gltf_primitive->position != UINT32_MAX)
+                {
+                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->position];
+                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
+                    position_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
+                    prim_vertex_count = accessor->count;
+                }
+
+                if (gltf_primitive->normal != UINT32_MAX)
+                {
+                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->normal];
+                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
+                    normals_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
+                }
+
+                if (gltf_primitive->tex_coord != UINT32_MAX)
+                {
+                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->tex_coord];
+                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
+                    tex_coords_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
+                }
+
+                if (gltf_primitive->joints != UINT32_MAX)
+                {
+                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->joints];
+                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
+                    joint_indices_buffer = (const uint16_t *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
+                }
+
+                if (gltf_primitive->weights != UINT32_MAX)
+                {
+                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->joints];
+                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
+                    joint_weights_buffer      = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
+                }
+
+                has_skin = (joint_indices_buffer && joint_weights_buffer);
+
+                for (uint32_t v = 0; v < prim_vertex_count; v++)
+                {
+                    skinned_vertex_t *vert = &vertex_buffer[vertex_count++];
+                    //positions
+                    vert->pos    = (vec3f_t){position_buffer[v * 3], position_buffer[v * 3 + 1], position_buffer[v * 3 + 2]};
+                    //normals
+                    vec3f_t normal = {0};
+                    if (normals_buffer)
+                    {
+                        normal = vec3_normalize((vec3f_t){normals_buffer[v * 3], normals_buffer[v * 3 + 1], normals_buffer[v * 3 + 2]});
+                    }
+                    vert->normal =  normal;
+                    //tex coords
+                    vec2f_t tex_coords = {0};
+                    if (tex_coords_buffer)
+                    {
+                        tex_coords = vec2_normalize((vec2f_t){tex_coords_buffer[v * 2], tex_coords_buffer[v * 2 + 1]});
+                    }
+                    vert->uv = tex_coords;
+                    //joint indices
+                    vec4i_t joint_indices = {0};
+                    if (has_skin)
+                    {
+                        joint_indices = (vec4i_t){joint_indices_buffer[v * 4], joint_indices_buffer[v * 4 + 1], joint_indices_buffer[v * 4 + 2], joint_indices_buffer[v * 4 +3]};
+                    }
+                    vert->joint_indices = joint_indices;
+                    //joint weights
+                    vec4f_t joint_weights = {0};
+                    if (has_skin)
+                    {
+                        joint_weights = (vec4f_t){joint_weights_buffer[v * 4], joint_weights_buffer[v * 4 + 1], joint_weights_buffer[v * 4 + 2], joint_weights_buffer[v * 4 + 3]};
+                    }
+                    vert->joint_weights = joint_weights;
+                }
+            }
+
+            //indices
+            {
+                gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->indices];
+                gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
+                gltf_buffer_t *buffer     = &gltf_model->buffers[bv->buffer];
+                
+                prim_index_count = accessor->count;
+                
+                switch (accessor->component_type)
+                {
+                    case UNSIGNED_BYTE:
+                    {
+                        const uint8_t *buf = (const uint8_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
+                        for (uint32_t index = 0; index < accessor->count; index++)
+                        {
+                            index_buffer[prim_index_count++] = buf[index] + vertex_start;
+                        }
+                        break;
+                    }
+
+                    case UNSIGNED_SHORT:
+                    {
+                        const uint16_t *buf = (const uint16_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
+                        for (uint32_t index = 0; index < accessor->count; index++)
+                        {
+                            index_buffer[prim_index_count++] = buf[index] + vertex_start;
+                        }
+                        break;
+                    }
+
+                    case UNSIGNED_INT:
+                    {
+                        const uint32_t *buf = (const uint32_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
+                        for (uint32_t index = 0; index < accessor->count; index++)
+                        {
+                            index_buffer[prim_index_count++] = buf[index] + vertex_start;
+                        }
+                        break;
+                    }
+                    default:
+                        assert(false);
+                        break;
+                }
+            }
+
+            primitive->first_index = index_count;
+            primitive->index_count = prim_index_count;
+            primitive->material    = gltf_primitive->material;
         }
     }
+}
 
-    
-    //update_joints
+static void setup(game_t *game)
+{
+    //create fps entity
+    gltf_model_t *gltf_model = model_load_from_gltf("./assets/models/cesium_man/cesium_man.gltf");
+
+    model_t model;
+    //we have the input, now load images
+    model_load_textures(gltf_model, &model, &game->asset_store, &game->renderer);
+    model_load_materials(gltf_model, &model);
+    load_nodes(gltf_model, &model);
+    load_skins(gltf_model, &model, &game->renderer);
+    load_animations(gltf_model, &model);
+    update_joints(&model, &game->renderer);
+    load_meshes(gltf_model, &model);
     //do index and vertex buffers
     
-#if 0
-    entity_t *fps_entity = bulk_data_push_struct(&game->entities);
-    fps_entity->id   = game->entity_id++;
-    fps_entity->type = ENTITY_TYPE_WIDGET;
-    fps_entity->p    = (vec2f_t){25, game->window_height - 50};
-    fps_entity->size = (vec2f_t){0,0};//does not matter
-    fps_entity->z_index = 5;
-
-    widget_t *widget   = bulk_data_push_struct(&game->widgets);
-    widget->entity     = fps_entity; 
-    fps_entity->data   = widget;
-    widget->text_label = bulk_data_push_struct(&game->text_labels);
-    widget->text_label->font = &game->font;
-    widget->text_label->offset = (vec2f_t){250,-250};
-    widget->text_label->text = NULL;
-    widget->text_label->duration = 1.0f;
-    widget->text_label->timer    = 0.0f;
-    widget->type = WIDGET_TYPE_FPS;
-#endif
-
     game->performance_freq = SDL_GetPerformanceFrequency();
     game->previous_counter = SDL_GetPerformanceCounter();
 

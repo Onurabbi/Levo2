@@ -9,7 +9,7 @@
 
 //! NOTE:Find an animation from an entities chunks, given its state (idle, run etc.)
 //! TODO: This uses linear search, since we're only going to go through 4*8 elements 
-static animation_t *get_animation_by_state(animation_chunk_t **animation_chunks, uint32_t chunk_count, entity_state_t state)
+static sprite_animation_t *get_animation_by_state(animation_chunk_t **animation_chunks, uint32_t chunk_count, entity_state_t state)
 {
     for (uint32_t i = 0; i < chunk_count; i++)
     {

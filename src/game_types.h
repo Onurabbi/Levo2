@@ -111,7 +111,8 @@ typedef struct
 typedef struct
 {
     const char            *name; //is this required
-    gltf_mesh_primitive_t  primitive;
+    gltf_mesh_primitive_t  primitives[4];
+    uint32_t               primitive_count;
 }gltf_mesh_t;
 
 typedef struct
@@ -161,7 +162,7 @@ typedef struct
     uint32_t  children[4];
     uint32_t  child_count;
 
-    mat4f_t  local_transform;
+    mat4f_t   local_transform;
 
     uint32_t  skin;
     uint32_t  mesh;
@@ -219,7 +220,6 @@ typedef struct
     uint32_t alpha_mode;
     bool double_sided;
 }gltf_material_t;
-
 
 typedef struct 
 {
@@ -345,6 +345,19 @@ typedef struct
 
 } skin_t;
 
+typedef struct 
+{
+    uint32_t first_index;
+    uint32_t index_count;
+    uint32_t material;
+}primitive_t;
+
+typedef struct 
+{
+    primitive_t  primitives[4];
+    uint32_t     primitive_count;
+}mesh_t;
+
 typedef struct
 {
     vulkan_texture_t **textures;
@@ -361,6 +374,9 @@ typedef struct
 
     animation_t       *animations;
     uint32_t           animation_count;
+
+    mesh_t            *meshes;
+    uint32_t           mesh_count;
 } model_t;
 
 typedef enum
@@ -473,8 +489,8 @@ typedef struct
 
 typedef struct 
 {
-    animation_t *animation;
-    float        timer;
+    sprite_animation_t *animation;
+    float               timer;
 } animation_update_result_t;
 
 typedef struct 
@@ -488,7 +504,7 @@ typedef struct
 
     //animation playback
     animation_chunk_t *animation_chunks[MAX_ANIMATION_CHUNKS_PER_ENTITY];
-    animation_t*       current_animation;
+    sprite_animation_t*       current_animation;
     uint32_t           animation_chunk_count;
     float              anim_timer;
 
