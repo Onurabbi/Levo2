@@ -287,8 +287,7 @@ vec2f_t vec2_normalize(vec2f_t in)
 {
     vec2f_t result = {0,0};
     float len = sqrtf(in.x * in.x + in.y * in.y);
-    if (len > EPSILON)
-    {
+    if (len > EPSILON) {
         result.x = in.x / len;
         result.y = in.y / len;
     }

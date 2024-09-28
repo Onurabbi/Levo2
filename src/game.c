@@ -15,7 +15,8 @@
 #include "core/utils/utils.c"
 #include "core/asset_store/asset_store.c"
 #include "core/input/input.c"
-#include "core/vulkan_renderer/vulkan_renderer.c"
+#include "core/renderer/frontend/renderer.c"
+#include "core/renderer/vulkan_backend/vulkan_backend.c"
 
 #include <time.h>
 #include <SDL2/SDL.h>
@@ -31,8 +32,7 @@ static void model_load_materials(gltf_model_t *gltf_model, model_t *model)
     model->material_count = gltf_model->material_count;
     model->materials = memory_alloc(model->material_count * sizeof(material_t), MEM_TAG_HEAP);
 
-    for (uint32_t i = 0; i < model->material_count; i++)
-    {
+    for (uint32_t i = 0; i < model->material_count; i++) {
         gltf_material_t *gltf_material = &gltf_model->materials[i];
         material_t *material = &model->materials[i];
 
@@ -41,15 +41,14 @@ static void model_load_materials(gltf_model_t *gltf_model, model_t *model)
     }
 }
 
-static void model_load_textures(gltf_model_t *gltf_model, model_t *model, asset_store_t* asset_store, vulkan_renderer_t *renderer)
+static void model_load_textures(gltf_model_t *gltf_model, model_t *model, asset_store_t* asset_store, renderer_t *renderer)
 {
     const char *model_file_name = file_name_wo_extension(gltf_model->path, MEM_TAG_TEMP);
 
-    model->textures      = memory_alloc(sizeof(vulkan_texture_t) * gltf_model->image_count, MEM_TAG_HEAP);
+    model->textures      = memory_alloc(sizeof(texture_t) * gltf_model->image_count, MEM_TAG_HEAP);
     model->texture_count = gltf_model->image_count;
 
-    for (uint32_t i = 0; i < model->texture_count; i++)
-    {
+    for (uint32_t i = 0; i < model->texture_count; i++) {
         const char *file_path = gltf_model->image_paths[i];
         const char *asset_id  = format_string(MEM_TAG_PERMANENT,"%s-%u", model_file_name, i);
 
@@ -72,8 +71,7 @@ static void load_node(gltf_model_t *gltf_model,
     model_node->mesh   = gltf_node->mesh;
 
     //load children
-    for (uint32_t i = 0; i < gltf_node->child_count; i++)
-    {
+    for (uint32_t i = 0; i < gltf_node->child_count; i++) {
         uint32_t child_index = gltf_node->children[i];
         load_node(gltf_model, model, &gltf_model->nodes[child_index], &model->nodes[child_index], node_index, child_index);
     }
@@ -85,8 +83,7 @@ static void load_nodes(gltf_model_t *gltf_model, model_t *model)
     model->nodes = memory_alloc(sizeof(model_node_t) * model->node_count, MEM_TAG_HEAP);
 
     gltf_scene_t *scene = &gltf_model->scenes[0];
-    for (uint32_t i = 0; i < scene->node_count; i++)
-    {
+    for (uint32_t i = 0; i < scene->node_count; i++) {
         uint32_t node_index = scene->nodes[i];
         load_node(gltf_model, 
                   model,
@@ -97,13 +94,12 @@ static void load_nodes(gltf_model_t *gltf_model, model_t *model)
     }
 }
 
-static void load_skins(gltf_model_t *gltf_model, model_t *model, vulkan_renderer_t *renderer)
+static void load_skins(gltf_model_t *gltf_model, model_t *model, renderer_t *renderer)
 {
     model->skin_count = gltf_model->skin_count;
     model->skins = memory_alloc(sizeof(skin_t) * model->skin_count, MEM_TAG_HEAP);
     
-    for (uint32_t i = 0; i < gltf_model->skin_count; i++)
-    {
+    for (uint32_t i = 0; i < gltf_model->skin_count; i++) {
         gltf_skin_t *gltf_skin = &gltf_model->skins[i];
         skin_t *skin = &model->skins[i];
 
@@ -112,8 +108,7 @@ static void load_skins(gltf_model_t *gltf_model, model_t *model, vulkan_renderer
         memmove(skin->joints, gltf_skin->joints, skin->joint_count * sizeof(uint32_t));
 
         //inverse bind matrices
-        if (gltf_skin->inverse_bind_matrices != UINT32_MAX)
-        {
+        if (gltf_skin->inverse_bind_matrices != UINT32_MAX) {
             gltf_accessor_t *accessor = &gltf_model->accessors[gltf_skin->inverse_bind_matrices];
             gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
             gltf_buffer_t      *buf   = &gltf_model->buffers[bv->buffer];
@@ -122,17 +117,10 @@ static void load_skins(gltf_model_t *gltf_model, model_t *model, vulkan_renderer
             skin->inverse_bind_matrices     = memory_alloc(sizeof(mat4f_t) * skin->inverse_bind_matrix_count, MEM_TAG_HEAP);
             memcpy(skin->inverse_bind_matrices, &buf->data[accessor->byte_offset + bv->byte_offset], accessor->count * sizeof(mat4f_t));
 
-            // create ssbo
             VkDeviceSize ssbo_size = skin->inverse_bind_matrix_count * sizeof(mat4f_t);
-            create_vulkan_buffer(&skin->ssbo, 
-                                 renderer, 
-                                 ssbo_size, 
-                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
-                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-            vkMapMemory(renderer->logical_device, skin->ssbo.memory, 0, ssbo_size, 0, &skin->ssbo.mapped);
+            renderer_create_renderbuffer(renderer, &skin->ssbo, RENDERBUFFER_TYPE_STORAGE_BUFFER, &renderer->shaders[SHADER_TYPE_SKINNED_GEOMETRY], NULL, ssbo_size);
         }
     }
-
 }
 
 static void load_animations(gltf_model_t *gltf_model, model_t *model)
@@ -140,8 +128,7 @@ static void load_animations(gltf_model_t *gltf_model, model_t *model)
     model->animation_count = gltf_model->animation_count;
     model->animations = memory_alloc(model->animation_count * sizeof(animation_t), MEM_TAG_HEAP);
 
-    for (uint32_t i = 0; i < model->animation_count; i++)
-    {
+    for (uint32_t i = 0; i < model->animation_count; i++) {
         gltf_animation_t *gltf_animation = &gltf_model->animations[i];
         animation_t *animation = &model->animations[i];
 
@@ -151,8 +138,7 @@ static void load_animations(gltf_model_t *gltf_model, model_t *model)
         animation->start_time = INFINITY;
         animation->end_time = -INFINITY;
 
-        for (uint32_t j = 0; j < animation->sampler_count; j++)
-        {
+        for (uint32_t j = 0; j < animation->sampler_count; j++) {
             gltf_animation_sampler_t *gltf_sampler = &gltf_animation->samplers[j];
             animation_sampler_t *sampler = &animation->samplers[j];
 
@@ -164,7 +150,7 @@ static void load_animations(gltf_model_t *gltf_model, model_t *model)
                 gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
                 gltf_buffer_t *buffer     = &gltf_model->buffers[bv->buffer];
                 const void *data          = &buffer->data[accessor->byte_offset + bv->byte_offset];
-                const float *dst          = (float*)data;
+                const float *dst          = (const float*)data;
 
                 sampler->input_count = accessor->count;
                 sampler->inputs      = memory_alloc(sampler->input_count * sizeof(float), MEM_TAG_HEAP);
@@ -191,14 +177,13 @@ static void load_animations(gltf_model_t *gltf_model, model_t *model)
                 gltf_buffer_t *buffer     = &gltf_model->buffers[bv->buffer];
                 const void *data          = &buffer->data[accessor->byte_offset + bv->byte_offset];
 
-                switch(accessor->type)
+                switch(accessor->type) 
                 {
-                    case VEC3:
+                    case VEC3: 
                     {
                         const vec3f_t *buf = (const vec3f_t *)data;
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
-                            vec3f_t *vec3 = &buf[index];
+                        for (uint32_t index = 0; index < accessor->count; index++) {
+                            const vec3f_t *vec3 = &buf[index];
                             vec4f_t *vec4 = &sampler->outputs[index];
                             vec4->x = vec3->x;
                             vec4->y = vec3->y;
@@ -220,8 +205,7 @@ static void load_animations(gltf_model_t *gltf_model, model_t *model)
             animation->channel_count = gltf_animation->channel_count;
             animation->channels      = memory_alloc(animation->channel_count * sizeof(animation_t), MEM_TAG_HEAP);
 
-            for (uint32_t k = 0; k < animation->channel_count; k++)
-            {
+            for (uint32_t k = 0; k < animation->channel_count; k++) {
                 gltf_channel_t *gltf_channel = &gltf_animation->channels[k];
                 animation_channel_t *channel = &animation->channels[k];
                 channel->path    = gltf_channel->path;
@@ -236,8 +220,7 @@ static void get_node_matrix(model_t *model, model_node_t *model_node, mat4f_t *o
 {
     mat4f_t node_matrix = model_node->local_transform;
     uint32_t current_parent = model_node->parent;
-    while (current_parent != UINT32_MAX)
-    {
+    while (current_parent != UINT32_MAX) {
         model_node_t *parent_node = &model->nodes[current_parent];
         mat4f_t temp = node_matrix;
         mat4_multiply(&parent_node->local_transform, &temp, &node_matrix);
@@ -246,13 +229,11 @@ static void get_node_matrix(model_t *model, model_node_t *model_node, mat4f_t *o
     *out = node_matrix;
 }
 
-static void update_joints(model_t *model, vulkan_renderer_t *renderer)
+static void update_joints(model_t *model, renderer_t *renderer)
 {
-    for (uint32_t i = 0; i < model->node_count; i++)
-    {
+    for (uint32_t i = 0; i < model->node_count; i++) {
         model_node_t *root = &model->nodes[i];
-        if (root->skin != UINT32_MAX)
-        {
+        if (root->skin != UINT32_MAX) {
             mat4f_t local_transform = {0};
             get_node_matrix(model, root, &local_transform);
 
@@ -263,8 +244,7 @@ static void update_joints(model_t *model, vulkan_renderer_t *renderer)
             uint32_t joint_count    = skin->joint_count;
             mat4f_t *joint_matrices = memory_alloc(joint_count * sizeof(mat4f_t), MEM_TAG_TEMP);
 
-            for (uint32_t j = 0; j < joint_count; j++)
-            {
+            for (uint32_t j = 0; j < joint_count; j++) {
                 model_node_t *joint = &model->nodes[skin->joints[j]];
 
                 mat4f_t joint_mat = {0};
@@ -274,17 +254,18 @@ static void update_joints(model_t *model, vulkan_renderer_t *renderer)
                 mat4_multiply(&joint_mat, &skin->inverse_bind_matrices[j], &temp);
                 mat4_multiply(&inverse_transform, &temp, &joint_matrices[j]);
             }
-            memcpy(skin->ssbo.mapped, joint_matrices, joint_count * sizeof(mat4f_t));
+            renderer_copy_to_renderbuffer(renderer, &skin->ssbo, joint_matrices, joint_count * sizeof(mat4f_t));
         }
     }
 }
 
-static void load_meshes(gltf_model_t *gltf_model, model_t *model)
+static void load_meshes(gltf_model_t *gltf_model, 
+                        model_t      *model,
+                        renderer_t *renderer)
 {
     model->mesh_count = gltf_model->mesh_count;
     model->meshes = memory_alloc(model->mesh_count * sizeof(model->mesh_count), MEM_TAG_HEAP);
-    for (uint32_t i = 0; i < model->mesh_count; i++)
-    {
+    for (uint32_t i = 0; i < model->mesh_count; i++) {
         model->meshes[i].primitive_count = gltf_model->meshes[i].primitive_count;
     }
     //allocate vertex and index buffers
@@ -294,8 +275,7 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
     uint32_t vertex_buffer_size = 0;
     size_t vertex_count         = 0;
 
-    for (uint32_t i = 0; i < gltf_model->mesh_count; i++)
-    {
+    for (uint32_t i = 0; i < gltf_model->mesh_count; i++) {
         index_buffer_size += gltf_model->indices_byte_lengths[i];
         index_count += gltf_model->index_counts[i];
 
@@ -304,19 +284,17 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
     }
 
     //vertex and index buffers for ALL meshes in the entire models
-    uint8_t *vertex_buffer = memory_alloc(vertex_buffer_size, MEM_TAG_TEMP);
-    uint8_t *index_buffer  = memory_alloc(index_buffer_size, MEM_TAG_TEMP);
+    skinned_vertex_t *vertex_buffer = (skinned_vertex_t*)memory_alloc(vertex_buffer_size, MEM_TAG_TEMP);
+    uint32_t *index_buffer  = (uint32_t*)memory_alloc(index_buffer_size, MEM_TAG_TEMP);
     
     index_count  = 0;
     vertex_count = 0;
 
-    for (uint32_t i = 0; i < model->mesh_count; i++)
-    {
+    for (uint32_t i = 0; i < model->mesh_count; i++) {
         gltf_mesh_t *gltf_mesh = &gltf_model->meshes[i];
         mesh_t *mesh = &model->meshes[i];
 
-        for (uint32_t j = 0; j < mesh->primitive_count; j++)
-        {
+        for (uint32_t j = 0; j < mesh->primitive_count; j++) {
             gltf_mesh_primitive_t *gltf_primitive = &gltf_mesh->primitives[j];
             primitive_t *primitive = &mesh->primitives[j];
 
@@ -332,37 +310,33 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
                 const uint16_t *joint_indices_buffer = NULL;
                 const float *joint_weights_buffer    = NULL;
                 uint32_t prim_vertex_count           = 0; 
-                if (gltf_primitive->position != UINT32_MAX)
-                {
+
+                if (gltf_primitive->position != UINT32_MAX) {
                     gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->position];
                     gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
                     position_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
                     prim_vertex_count = accessor->count;
                 }
 
-                if (gltf_primitive->normal != UINT32_MAX)
-                {
+                if (gltf_primitive->normal != UINT32_MAX) {
                     gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->normal];
                     gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
                     normals_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
                 }
 
-                if (gltf_primitive->tex_coord != UINT32_MAX)
-                {
+                if (gltf_primitive->tex_coord != UINT32_MAX) {
                     gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->tex_coord];
                     gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
                     tex_coords_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
                 }
 
-                if (gltf_primitive->joints != UINT32_MAX)
-                {
+                if (gltf_primitive->joints != UINT32_MAX) {
                     gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->joints];
                     gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
                     joint_indices_buffer = (const uint16_t *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
                 }
 
-                if (gltf_primitive->weights != UINT32_MAX)
-                {
+                if (gltf_primitive->weights != UINT32_MAX) {
                     gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->joints];
                     gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
                     joint_weights_buffer      = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
@@ -370,36 +344,31 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
 
                 has_skin = (joint_indices_buffer && joint_weights_buffer);
 
-                for (uint32_t v = 0; v < prim_vertex_count; v++)
-                {
+                for (uint32_t v = 0; v < prim_vertex_count; v++) {
                     skinned_vertex_t *vert = &vertex_buffer[vertex_count++];
                     //positions
                     vert->pos    = (vec3f_t){position_buffer[v * 3], position_buffer[v * 3 + 1], position_buffer[v * 3 + 2]};
                     //normals
                     vec3f_t normal = {0};
-                    if (normals_buffer)
-                    {
+                    if (normals_buffer) {
                         normal = vec3_normalize((vec3f_t){normals_buffer[v * 3], normals_buffer[v * 3 + 1], normals_buffer[v * 3 + 2]});
                     }
                     vert->normal =  normal;
                     //tex coords
                     vec2f_t tex_coords = {0};
-                    if (tex_coords_buffer)
-                    {
+                    if (tex_coords_buffer) {
                         tex_coords = vec2_normalize((vec2f_t){tex_coords_buffer[v * 2], tex_coords_buffer[v * 2 + 1]});
                     }
                     vert->uv = tex_coords;
                     //joint indices
                     vec4i_t joint_indices = {0};
-                    if (has_skin)
-                    {
+                    if (has_skin){
                         joint_indices = (vec4i_t){joint_indices_buffer[v * 4], joint_indices_buffer[v * 4 + 1], joint_indices_buffer[v * 4 + 2], joint_indices_buffer[v * 4 +3]};
                     }
                     vert->joint_indices = joint_indices;
                     //joint weights
                     vec4f_t joint_weights = {0};
-                    if (has_skin)
-                    {
+                    if (has_skin){
                         joint_weights = (vec4f_t){joint_weights_buffer[v * 4], joint_weights_buffer[v * 4 + 1], joint_weights_buffer[v * 4 + 2], joint_weights_buffer[v * 4 + 3]};
                     }
                     vert->joint_weights = joint_weights;
@@ -419,8 +388,7 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
                     case UNSIGNED_BYTE:
                     {
                         const uint8_t *buf = (const uint8_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
+                        for (uint32_t index = 0; index < accessor->count; index++) {
                             index_buffer[prim_index_count++] = buf[index] + vertex_start;
                         }
                         break;
@@ -429,8 +397,7 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
                     case UNSIGNED_SHORT:
                     {
                         const uint16_t *buf = (const uint16_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
+                        for (uint32_t index = 0; index < accessor->count; index++){
                             index_buffer[prim_index_count++] = buf[index] + vertex_start;
                         }
                         break;
@@ -439,8 +406,7 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
                     case UNSIGNED_INT:
                     {
                         const uint32_t *buf = (const uint32_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
+                        for (uint32_t index = 0; index < accessor->count; index++){
                             index_buffer[prim_index_count++] = buf[index] + vertex_start;
                         }
                         break;
@@ -451,12 +417,17 @@ static void load_meshes(gltf_model_t *gltf_model, model_t *model)
                 }
             }
 
-            primitive->first_index = index_count;
+            primitive->first_index = first_index;
             primitive->index_count = prim_index_count;
             primitive->material    = gltf_primitive->material;
+            index_count += prim_index_count;
         }
     }
+
+    renderer_create_renderbuffer(renderer, &model->vertex_buffer, RENDERBUFFER_TYPE_VERTEX_BUFFER, &renderer->shaders[SHADER_TYPE_SKINNED_GEOMETRY],(uint8_t *)vertex_buffer, vertex_buffer_size);
+    renderer_create_renderbuffer(renderer, &model->index_buffer, RENDERBUFFER_TYPE_INDEX_BUFFER, &renderer->shaders[SHADER_TYPE_SKINNED_GEOMETRY], (uint8_t*)index_buffer, index_buffer_size);
 }
+
 
 static void setup(game_t *game)
 {
@@ -464,16 +435,14 @@ static void setup(game_t *game)
     gltf_model_t *gltf_model = model_load_from_gltf("./assets/models/cesium_man/cesium_man.gltf");
 
     model_t model;
-    //we have the input, now load images
     model_load_textures(gltf_model, &model, &game->asset_store, &game->renderer);
     model_load_materials(gltf_model, &model);
     load_nodes(gltf_model, &model);
     load_skins(gltf_model, &model, &game->renderer);
     load_animations(gltf_model, &model);
     update_joints(&model, &game->renderer);
-    load_meshes(gltf_model, &model);
-    //do index and vertex buffers
-    
+    load_meshes(gltf_model, &model, &game->renderer);
+
     game->performance_freq = SDL_GetPerformanceFrequency();
     game->previous_counter = SDL_GetPerformanceCounter();
 
@@ -482,8 +451,7 @@ static void setup(game_t *game)
 
     game->camera.min.x = 0;
     game->camera.min.y = 0;
-    if (game->player_entity)
-    {
+    if (game->player_entity) {
         game->camera.min.x  = game->player_entity->p.x + game->player_entity->size.x / 2 - game->window_width / 2;
         game->camera.min.y  = game->player_entity->p.y + game->player_entity->size.y / 2 - game->window_height / 2;
     }
@@ -492,8 +460,7 @@ static void setup(game_t *game)
 static void update(game_t *game)
 {
     //if quit was requested, quit now
-    if (game->input.quit)
-    {
+    if (game->input.quit) {
         game->is_running = false;
         return;
     }
@@ -507,33 +474,27 @@ static void update(game_t *game)
     double sec = (double)elapsed / game->performance_freq;
     game->accumulator += sec;
 
-    while (game->accumulator > 1.0 / 61.0)
-    {
+    while (game->accumulator > 1.0 / 61.0) {
         memory_begin(MEM_TAG_SIM);
 
         //update all entities
-        for (uint32_t i = 0; i < bulk_data_size(&game->entities); i++)
-        {
+        for (uint32_t i = 0; i < bulk_data_size(&game->entities); i++) {
+
             entity_t *e = bulk_data_getp_null(&game->entities, i);
-            if (e)
-            {
+
+            if (e) {
+
                 switch (e->type)
                 {
                     case(ENTITY_TYPE_PLAYER):
-                    {
                         update_player(e, &game->input, DELTA_TIME, &game->entities);
                         break;
-                    }
                     case(ENTITY_TYPE_WEAPON):
-                    {
                         e->p = game->player_entity->p;
                         break;
-                    }
                     case(ENTITY_TYPE_WIDGET):
-                    {
                         update_widget(e, 1.0/60.0, sec);
                         break;
-                    }
                     default: 
                         break;
                 }
@@ -544,8 +505,7 @@ static void update(game_t *game)
 
         game->camera.min.x = 0;
         game->camera.min.y = 0;
-        if (game->player_entity)
-        {
+        if (game->player_entity) {
             game->camera.min.x  = game->player_entity->p.x + game->player_entity->size.x / 2 - game->window_width / 2;
             game->camera.min.y  = game->player_entity->p.y + game->player_entity->size.y / 2 - game->window_height / 2;
         }
@@ -558,25 +518,23 @@ static void update(game_t *game)
 
 static void render(game_t *game)
 {
-    vulkan_renderer_render(&game->renderer, game);
 }
 
 void game_run(game_t *game)
 {
     setup(game);
-    while(game->is_running)
-    {
+    while(game->is_running) {
         process_input(&game->input);
         update(game);
         render(game);
     }
+
     memory_uninit();
 }
 
 void game_init(game_t *game)
 {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0)
-    {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         LOGE("initializing SDL %s", SDL_GetError());
         return;
     }
@@ -584,7 +542,7 @@ void game_init(game_t *game)
 #if defined (DEBUG)
     game->window_width = 1920;
     game->window_height = 1080;
-    uint32_t flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS;
+    uint32_t flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN;
 #else
     SDL_DisplayMode dm = {};
     SDL_GetCurrentDisplayMode(0, &dm);
@@ -610,7 +568,20 @@ void game_init(game_t *game)
     memory_init();
 
     asset_store_init(&game->asset_store);
-    vulkan_renderer_init(&game->renderer, game->window, game->tile_width, game->tile_width);
+    memset(&game->renderer, 0, sizeof(game->renderer));
+
+    renderer_config_t renderer_config = {0};
+#if defined (DEBUG)
+    renderer_config.flags |= RENDERER_CONFIG_FLAG_ENABLE_VALIDATION;
+#endif
+
+    window_t window = {0};
+    window.window = game->window;
+    window.width = 0;
+    window.height = 0;
+
+    renderer_initialize(&game->renderer, &window, renderer_config);
+    renderer_create_shader(&game->renderer, SHADER_TYPE_SKINNED_GEOMETRY);
 
     game->entity_id = 0;
 

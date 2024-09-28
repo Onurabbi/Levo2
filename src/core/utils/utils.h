@@ -8,7 +8,7 @@
 
 #include "../memory/memory_types.h"
 
-char *read_whole_file(const char *file_path, long *size, memory_tag_t tag);
+uint8_t *read_whole_file(const char *file_path, long *size, memory_tag_t tag);
 
 #endif
 

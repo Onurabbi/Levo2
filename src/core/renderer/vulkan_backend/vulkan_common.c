@@ -6,10 +6,8 @@ bool get_memory_type(VkPhysicalDeviceMemoryProperties *memProperties,
                      VkMemoryPropertyFlags properties, 
                      uint32_t *result)
 {
-    for (uint32_t i = 0; i < memProperties->memoryTypeCount; i++)
-    {
-        if ((typeFilter & (1 << i)) && (memProperties->memoryTypes[i].propertyFlags & properties) == properties)
-        {
+    for (uint32_t i = 0; i < memProperties->memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProperties->memoryTypes[i].propertyFlags & properties) == properties) {
             *result = i;
             return true;
         }

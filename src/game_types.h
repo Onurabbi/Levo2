@@ -5,6 +5,8 @@
 #include <stddef.h>
 
 #include "core/containers/container_types.h"
+#include "core/math/math_types.h"
+#include "core/renderer/vulkan_backend/vulkan_types.h"
 #include "core/asset_store/asset_store.h"
 
 #define MAX_SPRITES_PER_ANIMATION 8
@@ -15,13 +17,13 @@
 #define ENTITY_CAN_COLLIDE 0x1
 typedef uint64_t entity_flags_t;
 
-enum 
+typedef enum 
 {
     ARRAY_BUFFER = 34962,
     ELEMENT_ARRAY_BUFFER = 34963
-};
+}buffer_view_target_e;
 
-enum 
+typedef enum 
 {
     SIGNED_BYTE = 5120,
     UNSIGNED_BYTE = 5121,
@@ -29,9 +31,9 @@ enum
     UNSIGNED_SHORT = 5123,
     UNSIGNED_INT = 5125,
     FLOAT = 5126
-};
+}accessor_component_type_e;
 
-enum
+typedef enum
 {
     SCALAR,
     VEC2,
@@ -40,9 +42,9 @@ enum
     MAT2,
     MAT3,
     MAT4
-};
+}accessor_data_type_e;
 
-enum
+typedef enum
 {
     POINTS = 0,
     LINES,
@@ -51,32 +53,32 @@ enum
     TRIANGLES,
     TRIANGLE_STRIP,
     TRIANGLE_FAN
-};
+}primitive_topology_e;
 
-enum
+typedef enum
 {
     TRANSLATION,
     ROTATION,
     SCALE,
     WEIGHTS,
-};
+}animation_channel_path_e;
 
-enum
+typedef enum
 {
     STEP_INTERPOLATION,
     LINEAR_INTERPOLATION,
     SPHERICAL_LINEAR_INTERPOLATION,
     CUBIC_SPLINE_INTERPOLATION
-};
+}animation_sampler_interpolation_e;
 
-enum
+typedef enum
 {
     OPAQUE,
     MASK,
     BLEND,
-};
+}alpha_mode_e;
 
-enum
+typedef enum
 {
     NEAREST_FILTER = 9728,
     LINEAR_FILTER = 9729,
@@ -84,14 +86,14 @@ enum
     LINEAR_MIPMAP_NEAREST_FILTER = 9985,
     NEAREST_MIPMAP_LINEAR_FILTER = 9986,
     LINEAR_MIPMAP_LINEAR_FILTER = 9986
-};
+}sampler_filter_e;
 
-enum
+typedef enum
 {
     CLAMP_TO_EDGE = 33071,
     MIRRORED_REPEAT = 33648,
     REPEAT = 10497
-};
+}sampler_wrap_e;
 
 typedef struct
 {
@@ -341,7 +343,7 @@ typedef struct
     mat4f_t  *inverse_bind_matrices;
     uint32_t  inverse_bind_matrix_count;
 
-    vulkan_buffer_t  ssbo;
+    renderbuffer_t  ssbo;
 
 } skin_t;
 
@@ -360,7 +362,7 @@ typedef struct
 
 typedef struct
 {
-    vulkan_texture_t **textures;
+    texture_t         **textures;
     uint32_t           texture_count;
 
     material_t        *materials;
@@ -377,6 +379,9 @@ typedef struct
 
     mesh_t            *meshes;
     uint32_t           mesh_count;
+
+    renderbuffer_t     vertex_buffer;
+    renderbuffer_t     index_buffer;
 } model_t;
 
 typedef enum
@@ -523,13 +528,13 @@ typedef struct
     float    f;
 } uint_float_pair;
 
-BulkDataTypes(entity_t)
-BulkDataTypes(tile_t)
-BulkDataTypes(animation_chunk_t)
-BulkDataTypes(sprite_t)
-BulkDataTypes(weapon_t)
-BulkDataTypes(widget_t)
-BulkDataTypes(text_label_t)
+BulkDataTypes(entity_t);
+BulkDataTypes(tile_t);
+BulkDataTypes(animation_chunk_t);
+BulkDataTypes(sprite_t);
+BulkDataTypes(weapon_t);
+BulkDataTypes(widget_t);
+BulkDataTypes(text_label_t);
 
 struct SDL_Window;
 
@@ -548,7 +553,7 @@ typedef struct
     float              tile_width;
 
     asset_store_t      asset_store;
-    vulkan_renderer_t  renderer;
+    renderer_t         renderer;
     
     //one player per game
     player_t           player_data;

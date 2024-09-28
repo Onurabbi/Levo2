@@ -32,21 +32,18 @@ void move_entity(entity_t *e, vec2f_t dp, bulk_data_entity_t *bd)
     entity_t *colliding_entities[4];
     uint32_t  colliding_entity_count = 0;
 
-    for (uint32_t j = 0; j < bulk_data_size(bd); j++)
-    {
+    for (uint32_t j = 0; j < bulk_data_size(bd); j++) {
         if (colliding_entity_count == 4) break;
         
         entity_t *other = bulk_data_getp_null(bd, j);
 
-        if (other)
-        {
+        if (other) {
             if (other == e) continue;
             if ((other->flags & ENTITY_CAN_COLLIDE) == 0) continue;
             
             vec2f_t contact_normal, contact_position;
             float time;
-            if (resolve_dyn_rect_vs_rect(e->rect, other->rect, dp, &contact_position, &contact_normal, &time))
-            {
+            if (resolve_dyn_rect_vs_rect(e->rect, other->rect, dp, &contact_position, &contact_normal, &time)) {
                 uint_float_pair *pair = &pairs[colliding_entity_count];
                 pair->i = colliding_entity_count;
                 pair->f = time;
@@ -59,14 +56,12 @@ void move_entity(entity_t *e, vec2f_t dp, bulk_data_entity_t *bd)
     qsort(pairs, colliding_entity_count, sizeof(pairs[0]), compare_collisions);
 
     //second pass to resolve collisions
-    for (uint32_t j = 0; j < colliding_entity_count; j++)
-    {
+    for (uint32_t j = 0; j < colliding_entity_count; j++) {
         uint32_t entity_index = pairs[j].i;
         rect_t r_st = colliding_entities[entity_index]->rect;
         vec2f_t contact_normal, contact_position;
         float time;
-        if (resolve_dyn_rect_vs_rect(e->rect, r_st, dp, &contact_position, &contact_normal, &time))
-        {
+        if (resolve_dyn_rect_vs_rect(e->rect, r_st, dp, &contact_position, &contact_normal, &time)) {
             dp.x += contact_normal.x * fabs(dp.x) * (1 - time);
             dp.y += contact_normal.y * fabs(dp.y) * (1 - time); 
         }

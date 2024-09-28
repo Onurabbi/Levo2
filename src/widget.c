@@ -7,12 +7,10 @@ void update_widget(entity_t *e, float delta_time, double elapsed_sec)
     switch(widget->type)
     {
         case(WIDGET_TYPE_FPS):
-        {
             static char buf[16];
             text_label_t *text_label = widget->text_label;
 
-            if (text_label->timer == 0.0f)
-            {
+            if (text_label->timer == 0.0f) {
                 sprintf(buf, "FPS: %.1lf", 1.0/elapsed_sec);
             }
             text_label->timer += delta_time;
@@ -22,11 +20,7 @@ void update_widget(entity_t *e, float delta_time, double elapsed_sec)
             }
             text_label->text = buf;
             break;
-        }
         default:
-        {
-
             break;
-        }
     }
 }

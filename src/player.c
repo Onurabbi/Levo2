@@ -17,45 +17,34 @@ void update_player(entity_t              *e,
     player_t *player = (player_t*)e->data;
 
     vec2f_t dp = {0.0f, 0.0f};
-    if (input->keyboard_state[SDL_SCANCODE_W])
-    {
+    if (input->keyboard_state[SDL_SCANCODE_W]) {
         dp.y = -1.0f;
     }
-    if (input->keyboard_state[SDL_SCANCODE_S])
-    {
+    if (input->keyboard_state[SDL_SCANCODE_S]) {
         dp.y = 1.0f;
     }
-    if (input->keyboard_state[SDL_SCANCODE_A])
-    {
+    if (input->keyboard_state[SDL_SCANCODE_A]) {
         dp.x = -1.0f;
     }
-    if (input->keyboard_state[SDL_SCANCODE_D])
-    {
+    if (input->keyboard_state[SDL_SCANCODE_D]) {
         dp.x = 1.0f;
     }
 
     dp = vec2_normalize(dp);
-    dp = vec2_multiply(dp, (vec2f_t){player->velocity * delta_time, 
-                                     player->velocity * delta_time});
+    dp = vec2_multiply(dp, (vec2f_t){player->velocity * delta_time, player->velocity * delta_time});
 
     switch (e->state)
     {
-        case(ENTITY_STATE_IDLE):
-        {
-            if (dp.x != 0.0f || dp.y != 0.0f)
-            {
+        case(ENTITY_STATE_IDLE): 
+            if (dp.x != 0.0f || dp.y != 0.0f) {
                 e->state = ENTITY_STATE_RUN;
             }
             break;
-        }
         case(ENTITY_STATE_RUN):
-        {
-            if (dp.x == 0.0f && dp.y == 0.0f)
-            {
+            if (dp.x == 0.0f && dp.y == 0.0f) {
                 e->state = ENTITY_STATE_IDLE;
             }
             break;
-        }
         default:
             assert(false && "unknown entity state");
             break;

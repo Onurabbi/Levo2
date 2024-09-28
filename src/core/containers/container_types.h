@@ -56,6 +56,6 @@ typedef struct {                                                    \
     item_##type     *items;                                         \
     uint32_t slot;                                                  \
     uint32_t count;                                                 \
-}bulk_data_##type;    
+}bulk_data_##type
 #endif
 

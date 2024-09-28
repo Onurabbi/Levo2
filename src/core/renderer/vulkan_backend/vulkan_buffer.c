@@ -4,7 +4,7 @@
 #include <assert.h>
 
 void create_vulkan_buffer(vulkan_buffer_t *buffer, 
-                          vulkan_renderer_t *renderer,
+                          vulkan_context_t *context,
                           VkDeviceSize size,
                           VkBufferUsageFlags usage,
                           VkMemoryPropertyFlags properties)
@@ -14,16 +14,18 @@ void create_vulkan_buffer(vulkan_buffer_t *buffer,
     bufferInfo.size = size;
     bufferInfo.usage = usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    VK_CHECK(vkCreateBuffer(renderer->logical_device, &bufferInfo, NULL, &buffer->buffer));
+    VK_CHECK(vkCreateBuffer(context->logical_device, &bufferInfo, NULL, &buffer->buffer));
 
     VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(renderer->logical_device, buffer->buffer, &memRequirements);
+    vkGetBufferMemoryRequirements(context->logical_device, buffer->buffer, &memRequirements);
 
     VkMemoryAllocateInfo allocInfo = {};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
-    get_memory_type(&renderer->device_memory_properties, memRequirements.memoryTypeBits, properties, &allocInfo.memoryTypeIndex);
-    VK_CHECK(vkAllocateMemory(renderer->logical_device, &allocInfo, NULL, &buffer->memory));
+    get_memory_type(&context->memory_properties, memRequirements.memoryTypeBits, properties, &allocInfo.memoryTypeIndex);
+    VK_CHECK(vkAllocateMemory(context->logical_device, &allocInfo, NULL, &buffer->memory));
 
-    vkBindBufferMemory(renderer->logical_device, buffer->buffer, buffer->memory, 0);    
+    vkBindBufferMemory(context->logical_device, buffer->buffer, buffer->memory, 0);    
+
+    buffer->buffer_size = size;
 }

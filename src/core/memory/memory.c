@@ -183,18 +183,13 @@ void memory_uninit(void)
         mapping_t mapping = mappings[i];
         if (mapping.type == MMAP)
         {
-            if (munmap(mapping.base, mapping.size) < 0)
-            {
+            if (munmap(mapping.base, mapping.size) < 0) {
                 LOGE("Unable to unmap memory");
             }
-        }
-        else if (mapping.type == MALLOC)
-        {
+        } else if (mapping.type == MALLOC) {
             LOGE("Forgot to deallocate malloced memory %u bytes in size", mapping.size);
             free(mapping.base);
-        }
-        else
-        {
+        } else {
             assert(false && "Unknown allocation type");
         }
     }
@@ -289,15 +284,12 @@ void *heap_alloc(uint32_t size)
 
     void *ptr = NULL;
 
-    if (heap->free_list > -1)
-    {
+    if (heap->free_list > -1) {
         block_header_t *header = block_at_index(heap, heap->free_list);
         ptr = &header[1];
         heap->free_list = header->next;
         header->next = -1;
-    }
-    else
-    {
+    } else {
         ptr = data_at_index(heap, heap->block_count);
         heap->block_count++;
     }
@@ -309,15 +301,11 @@ void memory_dealloc(void *memory, uint32_t size, memory_tag_t tag)
     switch(tag)
     {
         case MEM_TAG_HEAP:
-        {
             heap_free(memory, size);
             break;
-        }
         default:
-        {
             LOGE("Unable to deallocate memory other than MEM_TAG_HEAP");
             break;
-        }
     }
 }
 
@@ -327,37 +315,24 @@ void *memory_alloc(uint32_t size, memory_tag_t tag)
     switch(tag)
     {
         case MEM_TAG_BULK_DATA:
-        {
             mem = memory_map(size);
             assert(mem);
             return mem;
-        }
         case MEM_TAG_SIM:
-        {
             mem = memory_arena_push_size(&sim_arena, size);
             break;
-        }
         case MEM_TAG_PERMANENT:
-        {
             mem = memory_arena_push_size(&permanent_arena, size);
             break;
-        }
         case MEM_TAG_RENDER:
-        {
             mem = memory_arena_push_size(&render_arena, size);
             break;
-        }
         case MEM_TAG_HEAP:
-        {
-            LOGI("Allocating size: %u", size);
             mem = heap_alloc(size);
             break;
-        }
         default:
-        {
             LOGE("Unknown allocation type!!");
             break;
-        }
     }
     assert(mem);
     memset(mem, 0, size);
@@ -374,25 +349,17 @@ void memory_begin(memory_tag_t tag)
     switch(tag)
     {
         case MEM_TAG_SIM:
-        {
             memory_arena_begin(&sim_arena);
             break;
-        }
         case MEM_TAG_PERMANENT:
-        {
             memory_arena_begin(&permanent_arena);
             break;
-        }
         case MEM_TAG_RENDER:
-        {
             memory_arena_begin(&render_arena);
             break;
-        } 
         default:
-        {
             LOGE("Invalid request to begin memory of type: %s", memory_tag_string(tag));
             break;
-        }
     }
 }
 
