@@ -1,4 +1,6 @@
 /assets
+/misc
+*.rdc
 .vscode/
 *.swp
 gameengine
