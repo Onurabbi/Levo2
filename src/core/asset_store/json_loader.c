@@ -1,9 +1,11 @@
-#include "json_loader.h"
 #include "../../game.h"
 #include "../logger/logger.h"
 #include "../string/string.h"
 #include "../math/math_utils.h"
 #include "../utils/utils.h"
+
+#include "json_loader.h"
+#include "asset_types.h"
 #include "cJSON.c"
 
 #include <assert.h>
@@ -167,7 +169,7 @@ static void set_push(uint32_t *set, uint32_t *p_count, uint32_t num)
     *p_count = count;
 }
 
-gltf_model_t *model_load_from_gltf(const char * path)
+gltf_model_t *model_load_from_gltf(const char * path, const char *asset_id)
 {
     long buf_size;
     uint8_t *buf = read_whole_file(path, &buf_size, MEM_TAG_TEMP);
@@ -189,7 +191,8 @@ gltf_model_t *model_load_from_gltf(const char * path)
     }
     
     gltf_model->path = string_duplicate(path, MEM_TAG_TEMP);
-
+    gltf_model->asset_id = string_duplicate(asset_id, MEM_TAG_TEMP);
+    
     //do scenes
     cJSON *scenes_node = cJSON_GetObjectItem(root, "scenes");
     gltf_model->scene_count = cJSON_GetArraySize(scenes_node);
@@ -236,46 +239,46 @@ gltf_model_t *model_load_from_gltf(const char * path)
         const char *name = cJSON_GetStringValue(cJSON_GetObjectItem(node, "name"));
         model_node->name = string_duplicate(name, MEM_TAG_TEMP);
 
+        //default t,r,s and local transform
+        model_node->translation = (vec3f_t){0.0f, 0.0f, 0.0f};
+        model_node->scale       = (vec3f_t){1.0f, 1.0f, 1.0f};
+        model_node->rotation    = (quat_t){0.0f, 0.0f, 0.0f, 0.0f};
+        model_node->local_transform = mat4_identity();
+
         //matrix
         cJSON *matrix = cJSON_GetObjectItem(node, "matrix");
         if (matrix) {
             int j = 0;
-            //copy the matrix directly
-            for (uint32_t col = 0; col < 4; col++) {
-                for (uint32_t row = 0; row < 4; row++) {
+            //copy the matrix directly (column major order)
+            for (uint32_t row = 0; row < 4; row++) {
+                for (uint32_t col = 0; col < 4; col++) {
                     model_node->local_transform.m[row][col] = (float)cJSON_GetNumberValue(cJSON_GetArrayItem(matrix, j++));
                 }
             }
         } else {
-            //default t,r,s
-            vec3f_t t_vec = {0};
-            quat_t rot_q = {0};
-            vec3f_t scale_vec = {1.0f, 1.0f, 1.0f};
 
             //construct the matrix from TRS
             cJSON *trans = cJSON_GetObjectItem(node, "translation");
             if (trans) {
-                t_vec.x = cJSON_GetNumberValue(cJSON_GetArrayItem(trans, 0));
-                t_vec.y = cJSON_GetNumberValue(cJSON_GetArrayItem(trans, 1));
-                t_vec.z = cJSON_GetNumberValue(cJSON_GetArrayItem(trans, 2));
+                model_node->translation.x = cJSON_GetNumberValue(cJSON_GetArrayItem(trans, 0));
+                model_node->translation.y = cJSON_GetNumberValue(cJSON_GetArrayItem(trans, 1));
+                model_node->translation.z = cJSON_GetNumberValue(cJSON_GetArrayItem(trans, 2));
             }
 
             cJSON *rot = cJSON_GetObjectItem(node, "rotation");
             if (rot) {
-                rot_q.x = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 0));
-                rot_q.y = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 1));
-                rot_q.z = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 2));
-                rot_q.w = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 3));
+                model_node->rotation.x = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 0));
+                model_node->rotation.y = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 1));
+                model_node->rotation.z = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 2));
+                model_node->rotation.w = cJSON_GetNumberValue(cJSON_GetArrayItem(rot, 3));
             } 
 
             cJSON *scale = cJSON_GetObjectItem(node, "scale");
             if (scale) {
-                scale_vec.x = cJSON_GetNumberValue(cJSON_GetArrayItem(scale, 0));
-                scale_vec.x = cJSON_GetNumberValue(cJSON_GetArrayItem(scale, 1));
-                scale_vec.x = cJSON_GetNumberValue(cJSON_GetArrayItem(scale, 2));
+                model_node->scale.x = cJSON_GetNumberValue(cJSON_GetArrayItem(scale, 0));
+                model_node->scale.y = cJSON_GetNumberValue(cJSON_GetArrayItem(scale, 1));
+                model_node->scale.z = cJSON_GetNumberValue(cJSON_GetArrayItem(scale, 2));
             }
-
-            transform_from_TRS(&model_node->local_transform, t_vec, rot_q, scale_vec);
         }
 
         //skin
@@ -468,7 +471,7 @@ gltf_model_t *model_load_from_gltf(const char * path)
 
         cJSON *joints_node = cJSON_GetObjectItem(skin_node, "joints");
         gltf_skin->joint_count = cJSON_GetArraySize(joints_node);
-        gltf_skin->joints = memory_alloc(gltf_skin->joint_count * sizeof(uint32_t), MEM_TAG_TEMP);
+        gltf_skin->joints = memory_alloc(gltf_skin->joint_count * sizeof(uint8_t), MEM_TAG_TEMP);
 
         for (uint32_t j = 0; j < gltf_skin->joint_count; j++) {
             gltf_skin->joints[j] = (uint32_t)cJSON_GetNumberValue(cJSON_GetArrayItem(joints_node, j));

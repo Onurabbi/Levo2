@@ -20,13 +20,10 @@ void memory_uninit(void);
  *         For bulk data, it works like mmap
  */
 void *memory_alloc(uint32_t size, memory_tag_t tag); 
-
 /**
- * @brief: For things that go on an arena, this doesn't do anything
- *         For things on heaps, this works like free
- *         For bulk data, it works like mmap
+ * @brief: Only pass memory allocated on heap here.
  */
-void memory_dealloc(void *mem, uint32_t size, memory_tag_t tag);
+void memory_dealloc(void *mem);
 /**
  * @brief: For arenas, this works like a reset. For other types of memory, this does nothing
  */

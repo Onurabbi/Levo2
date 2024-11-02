@@ -230,8 +230,7 @@ static void create_logical_device(vulkan_context_t *ctx)
     float priority = 1.0f;
 
     {
-        VkDeviceQueueCreateInfo queue_info = {};
-        queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        VkDeviceQueueCreateInfo queue_info = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
         queue_info.queueFamilyIndex = ctx->graphics_family;
         queue_info.queueCount = 1;
         queue_info.pQueuePriorities = &priority;
@@ -239,8 +238,7 @@ static void create_logical_device(vulkan_context_t *ctx)
     }
 
     if (ctx->compute_family != ctx->graphics_family) {
-        VkDeviceQueueCreateInfo queue_info = {};
-        queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        VkDeviceQueueCreateInfo queue_info = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
         queue_info.queueFamilyIndex = ctx->compute_family;
         queue_info.queueCount = 1;
         queue_info.pQueuePriorities = &priority;
@@ -249,8 +247,7 @@ static void create_logical_device(vulkan_context_t *ctx)
 
     if (ctx->transfer_family != ctx->graphics_family &&
         ctx->transfer_family != ctx->compute_family) {
-        VkDeviceQueueCreateInfo queue_info = {};
-        queue_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        VkDeviceQueueCreateInfo queue_info = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
         queue_info.queueFamilyIndex = ctx->transfer_family;
         queue_info.queueCount = 1;
         queue_info.pQueuePriorities = &priority;
@@ -261,24 +258,22 @@ static void create_logical_device(vulkan_context_t *ctx)
     ctx->device_extension_names[ctx->device_extension_name_count++] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
 
     VkPhysicalDeviceFeatures2 device_features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR};
-    {
-        device_features.features.samplerAnisotropy = VK_TRUE;
-        //dynamic rendering
-        VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_ext = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES};
-        dynamic_rendering_ext.dynamicRendering = VK_TRUE;
-        device_features.pNext = &dynamic_rendering_ext;
+    device_features.features.samplerAnisotropy = VK_TRUE;
+    //dynamic rendering
+    VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_ext = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES};
+    dynamic_rendering_ext.dynamicRendering = VK_TRUE;
+    device_features.pNext = &dynamic_rendering_ext;
 
-        VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_dynamic_state = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
-        extended_dynamic_state.extendedDynamicState = VK_TRUE;
-        dynamic_rendering_ext.pNext = &extended_dynamic_state;
+    VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extended_dynamic_state = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT};
+    extended_dynamic_state.extendedDynamicState = VK_TRUE;
+    dynamic_rendering_ext.pNext = &extended_dynamic_state;
 
-        VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT};
-        descriptor_indexing_features.descriptorBindingPartiallyBound = VK_TRUE;
-        extended_dynamic_state.pNext = &descriptor_indexing_features;
-    }
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing_features = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT};
+    descriptor_indexing_features.descriptorBindingPartiallyBound = VK_TRUE;
+    extended_dynamic_state.pNext = &descriptor_indexing_features;
+    
 
-    VkDeviceCreateInfo device_create_info = {};
-    device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    VkDeviceCreateInfo device_create_info = {VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     device_create_info.enabledExtensionCount = ctx->device_extension_name_count;
     device_create_info.ppEnabledExtensionNames = ctx->device_extension_names;
     device_create_info.pEnabledFeatures  = NULL;
@@ -295,6 +290,7 @@ static void create_logical_device(vulkan_context_t *ctx)
         //! TODO: implement dynamic function rendering here
         LOGI("This device does not support vulkan 1.3. Loading dynamic rendering functions dynamically");
     }
+
     //queues are created along with the device
     vkGetDeviceQueue(ctx->logical_device, ctx->graphics_family, 0, &ctx->graphics_queue);
 }
@@ -479,9 +475,8 @@ static bool create_swapchain(vulkan_context_t *ctx, window_t *window)
 
     //get swapchain images
     VK_CHECK(vkGetSwapchainImagesKHR(ctx->logical_device, ctx->swapchain, &ctx->swapchain_image_count, NULL));
-    ctx->swapchain_images = malloc(ctx->swapchain_image_count * sizeof(VkImage));
+    assert(ctx->swapchain_image_count <= MAX_SWAPCHAIN_IMAGE_COUNT);
     VK_CHECK(vkGetSwapchainImagesKHR(ctx->logical_device, ctx->swapchain, &ctx->swapchain_image_count, ctx->swapchain_images));
-    ctx->swapchain_image_views = malloc(ctx->swapchain_image_count * sizeof(VkImageView));
 
     for (uint32_t i = 0; i < ctx->swapchain_image_count; i++) {
         VkImageViewCreateInfo viewCI = {};
@@ -571,7 +566,6 @@ bool vulkan_backend_initialize(renderer_backend_t *backend, window_t *window, re
     backend->internal_context = memory_alloc(sizeof(vulkan_context_t), MEM_TAG_PERMANENT);
 
     vulkan_context_t *ctx = (vulkan_context_t *)backend->internal_context;
-    bulk_data_init(&ctx->textures, vulkan_texture_t);
 
     if (config->flags & RENDERER_CONFIG_FLAG_ENABLE_VALIDATION) {
         ctx->validation_enabled = true;
@@ -599,6 +593,10 @@ bool vulkan_backend_initialize(renderer_backend_t *backend, window_t *window, re
     create_sync_primitives(ctx);
     create_descriptor_pool(ctx);
     create_command_buffers(ctx);
+
+    bulk_data_init_vulkan_texture_t(&ctx->textures);
+    bulk_data_init_vulkan_buffer_t(&ctx->buffers);
+
     return true;
 }
 
@@ -639,9 +637,48 @@ bool vulkan_backend_frame_prepare(struct renderer_backend_t *backend, frame_data
     return true;
 }
 
+bool vulkan_backend_frame_submit(struct renderer_backend_t *backend, frame_data_t *frame_data)
+{
+    vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
+
+    VkSemaphore wait_semaphores[] = {context->present_complete_semaphores[context->current_frame]};
+    VkSemaphore signal_semaphores[] = {context->render_complete_semaphores[context->current_frame]};
+    VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+    VkSubmitInfo submit_info = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &context->command_buffers[context->current_frame];
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
+
+    VK_CHECK(vkQueueSubmit(context->graphics_queue, 1, &submit_info, context->wait_fences[context->current_frame]));
+
+    VkSwapchainKHR swapchains[] = {context->swapchain};
+
+    VkPresentInfoKHR present_info = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = signal_semaphores;
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = swapchains;
+    present_info.pImageIndices = &context->image_index;
+
+    //!TODO: this can also return VK_ERROR_OUT_OF_DATE_KHR or VK_SUBOPTIMAL_KHR if the framebuffer is resized
+    VK_CHECK(vkQueuePresentKHR(context->graphics_queue, &present_info));
+
+    context->current_frame = (context->current_frame + 1) % context->max_frames_in_flight;
+
+    return true;
+}
+
 bool vulkan_backend_begin_rendering(struct renderer_backend_t *backend)
 {
     vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
+
+    VK_CHECK(vkResetCommandBuffer(context->command_buffers[context->current_frame], 0));
+
     VkCommandBufferBeginInfo cmd_buf_info = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     VK_CHECK(vkBeginCommandBuffer(context->command_buffers[context->current_frame], &cmd_buf_info));
 
@@ -691,7 +728,7 @@ bool vulkan_backend_begin_rendering(struct renderer_backend_t *backend)
     VkRenderingAttachmentInfo color_attachment = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     color_attachment.imageView   = context->swapchain_image_views[context->image_index];
     color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     color_attachment.clearValue.color = (VkClearColorValue){.float32 = {0.0f, 0.0f, 0.0f, 0.0f}};
     color_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
@@ -701,8 +738,9 @@ bool vulkan_backend_begin_rendering(struct renderer_backend_t *backend)
     VkRenderingAttachmentInfo depth_stencil_attachment = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     depth_stencil_attachment.imageView = context->depth_image_view;
     depth_stencil_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth_stencil_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    depth_stencil_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depth_stencil_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depth_stencil_attachment.clearValue.depthStencil = (VkClearDepthStencilValue){1.0f, 0.0f};
     depth_stencil_attachment.resolveMode = VK_RESOLVE_MODE_NONE;
     depth_stencil_attachment.resolveImageView = VK_NULL_HANDLE;
 
@@ -737,95 +775,60 @@ bool vulkan_backend_set_scissor(struct renderer_backend_t *backend,
 
 void vulkan_backend_copy_to_renderbuffer(struct renderer_backend_t *backend, renderbuffer_t *renderbuffer, void *src, uint32_t size)
 {
-    vulkan_buffer_t *vulkan_buffers = (vulkan_buffer_t *)renderbuffer->internal_data;
     vulkan_context_t *context = (vulkan_context_t*)backend->internal_context;
-
-    vulkan_buffer_t *vulkan_buffer = &vulkan_buffers[context->current_frame];
+    vulkan_buffer_t *vulkan_buffer = bulk_data_getp_null_vulkan_buffer_t(&context->buffers, renderbuffer->buffers[context->current_frame]);
     memcpy(vulkan_buffer->mapped, src, size);
 }
 
 static bool vulkan_backend_create_device_local_buffer(vulkan_context_t *context, 
-                                                      vulkan_buffer_t *vulkan_buffers, 
-                                                      uint32_t count, 
+                                                      vulkan_buffer_t *buffer, 
                                                       uint32_t size,
-                                                      uint8_t *data,
+                                                      uint8_t *buf_data,
                                                       VkBufferUsageFlags flags,
                                                       VkMemoryPropertyFlags mem_flags)
 {
-    for (uint32_t i = 0; i < count; i++) {
-        vulkan_buffer_t *buffer = &vulkan_buffers[i];
+    vulkan_buffer_t staging_buffer;
+    create_vulkan_buffer(&staging_buffer,
+                        context,
+                        size,
+                        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    void *data;
+    vkMapMemory(context->logical_device, staging_buffer.memory, 0, size, 0, &data);
+    memcpy(data, buf_data, size);
+    vkUnmapMemory(context->logical_device, staging_buffer.memory);
 
-        vulkan_buffer_t staging_buffer;
-        create_vulkan_buffer(&staging_buffer,
-                            context,
-                            size,
-                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        void *data;
-        vkMapMemory(context->logical_device, staging_buffer.memory, 0, size, 0, &data);
-        memcpy(data, data, size);
-        vkUnmapMemory(context->logical_device, staging_buffer.memory);
+    create_vulkan_buffer(buffer, context, size, flags, mem_flags);
+    
+    VkCommandBuffer copy_cmd = begin_command_buffer(context->logical_device, context->graphics_command_pool);
+    
+    VkBufferCopy copy_region = {};
+    copy_region.size = size;
+    vkCmdCopyBuffer(copy_cmd, staging_buffer.buffer, buffer->buffer, 1, &copy_region);
 
-        create_vulkan_buffer(buffer, context, size, flags, mem_flags);
-        
-        VkCommandBuffer copy_cmd = begin_command_buffer(context->logical_device, context->graphics_command_pool);
-        
-        VkBufferCopy copy_region = {};
-        copy_region.size = size;
-        vkCmdCopyBuffer(copy_cmd, staging_buffer.buffer, buffer->buffer, 1, &copy_region);
+    end_command_buffer(&copy_cmd, context->logical_device, context->graphics_command_pool, context->graphics_queue);
 
-        end_command_buffer(&copy_cmd, context->logical_device, context->graphics_command_pool, context->graphics_queue);
-
-        vkDestroyBuffer(context->logical_device, staging_buffer.buffer, NULL);
-        vkFreeMemory(context->logical_device, staging_buffer.memory, NULL);
-    }
+    vkDestroyBuffer(context->logical_device, staging_buffer.buffer, NULL);
+    vkFreeMemory(context->logical_device, staging_buffer.memory, NULL);
     return true;
 }
 
 static bool vulkan_backend_create_host_visible_buffer(vulkan_context_t *context,
-                                                      vulkan_buffer_t *vulkan_buffers,
-                                                      uint32_t count, 
+                                                      vulkan_buffer_t *vulkan_buffer,
                                                       uint32_t size,
-                                                      renderbuffer_type_e type,
-                                                      VkDescriptorSetLayout layout,
                                                       VkBufferUsageFlags flags,
                                                       VkMemoryPropertyFlags mem_flags)
 {
-    for (uint32_t i = 0; i < count; i++) {
-        vulkan_buffer_t *vulkan_buffer = &vulkan_buffers[i];
-        //! these require descriptor sets
-        create_vulkan_buffer(vulkan_buffer, context, size, flags, mem_flags);
-        vkMapMemory(context->logical_device, vulkan_buffer->memory, 0, size, 0, &vulkan_buffer->mapped);
-
-        //do descriptor sets
-        VkDescriptorSetAllocateInfo alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-        alloc_info.descriptorPool = context->descriptor_pool;
-        alloc_info.pSetLayouts = &layout;
-        alloc_info.descriptorSetCount = 1;
-        VK_CHECK(vkAllocateDescriptorSets(context->logical_device, &alloc_info, &vulkan_buffer->descriptor_set));
-
-        VkDescriptorBufferInfo buffer_info = {0};
-        buffer_info.buffer = vulkan_buffer->buffer;
-        buffer_info.offset = 0;
-        buffer_info.range  = vulkan_buffer->buffer_size;
-
-        VkWriteDescriptorSet descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        descriptor_write.dstSet = vulkan_buffer->descriptor_set;
-        descriptor_write.descriptorType = (type == RENDERBUFFER_TYPE_STORAGE_BUFFER) ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptor_write.dstBinding = 0;
-        descriptor_write.pBufferInfo = &buffer_info;
-        descriptor_write.descriptorCount = 1;
-        
-        vkUpdateDescriptorSets(context->logical_device, 1, &descriptor_write, 0, NULL);
-    }
+    //! these require descriptor sets
+    create_vulkan_buffer(vulkan_buffer, context, size, flags, mem_flags);
+    vkMapMemory(context->logical_device, vulkan_buffer->memory, 0, size, 0, &vulkan_buffer->mapped);
     return true;
 }
 
 bool vulkan_backend_create_renderbuffer(struct renderer_backend_t *backend, 
                                         renderbuffer_t *renderbuffer, 
                                         renderbuffer_type_e type,
-                                        shader_t *shader,
                                         uint8_t *buffer_data,
                                         uint32_t size)
 {
@@ -870,44 +873,243 @@ bool vulkan_backend_create_renderbuffer(struct renderer_backend_t *backend,
             break;
     }
     
-    renderbuffer->internal_data = memory_alloc(buffer_count * sizeof(vulkan_buffer_t), MEM_TAG_PERMANENT);
-    vulkan_buffer_t *buffers = (vulkan_buffer_t *)renderbuffer->internal_data;
-    assert(renderbuffer->internal_data);
-
+    renderbuffer->buffer_count = buffer_count;
     bool success = false;
-    //! if device local buffer, create staging buffer first, and copy data to device local buffer,
-    if (mem_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
-        assert(buffer_data);
-        success = vulkan_backend_create_device_local_buffer(context, 
-                                                            buffers, 
-                                                            buffer_count, 
-                                                            buf_size, 
-                                                            buffer_data, 
-                                                            usage, 
-                                                            mem_flags);
-    } else {
-        //! TODO: this is not very good. Shaders need a better way of keeping track of 
-        // which descriptor layout is for what. Because I know that there's only one shader, I know which layout is required.
-        // I need to think about what to do when we have multiple shaders
-        vulkan_shader_t *vk_shader = (vulkan_shader_t *)shader->internal_data;
 
-        VkDescriptorSetLayout layout;
-        if (type == RENDERBUFFER_TYPE_UNIFORM_BUFFER) {
-            layout = vk_shader->layouts[SCENE_MATRIX_LAYOUT];
+    for (uint32_t i = 0; i < buffer_count; i++)
+    {
+        uint32_t slot = bulk_data_allocate_slot_vulkan_buffer_t(&context->buffers);
+        renderbuffer->buffers[i] = slot;
+
+        vulkan_buffer_t *buffer = bulk_data_getp_null_vulkan_buffer_t(&context->buffers, slot);
+
+        //! if device local buffer, create staging buffer first, and copy data to device local buffer,
+        if (mem_flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) {
+            assert(buffer_data);
+            success = vulkan_backend_create_device_local_buffer(context, 
+                                                                buffer, 
+                                                                buf_size, 
+                                                                buffer_data, 
+                                                                usage, 
+                                                                mem_flags);
         } else {
-            layout = vk_shader->layouts[JOINT_MATRIX_LAYOUT];
+
+            success = vulkan_backend_create_host_visible_buffer(context,
+                                                                buffer,
+                                                                buf_size, 
+                                                                usage,
+                                                                mem_flags);
         }
-        success = vulkan_backend_create_host_visible_buffer(context,
-                                                            buffers,
-                                                            buffer_count,
-                                                            buf_size,
-                                                            type,
-                                                            layout, 
-                                                            usage,
-                                                            mem_flags);
+
+        if (!success) break;
     }
     
     return success;
+}
+
+static bool skinned_model_update_descriptors(vulkan_context_t *context, vulkan_shader_t *vk_shader, shader_resource_list_t *resources)
+{
+    //scene uniforms
+    vulkan_uniform_buffer_render_data_t *scene_uniform_data = (vulkan_uniform_buffer_render_data_t*)resources->globals_data;
+
+    //! NOTE: First three descriptor sets are for the scene uniform buffer
+    for (uint32_t i = 0; i < 3; i++) {
+        vulkan_buffer_t *vk_buffer = bulk_data_getp_null_vulkan_buffer_t(&context->buffers, scene_uniform_data->buffer_indices[i]);
+
+        //do descriptor sets
+        VkDescriptorSetAllocateInfo alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        alloc_info.descriptorPool = context->descriptor_pool;
+        alloc_info.pSetLayouts = &vk_shader->layouts[0];
+        alloc_info.descriptorSetCount = 1;
+        VK_CHECK(vkAllocateDescriptorSets(context->logical_device, &alloc_info, &scene_uniform_data->descriptor_sets[i]));
+
+        VkDescriptorBufferInfo buffer_info = {0};
+        buffer_info.buffer = vk_buffer->buffer;
+        buffer_info.offset = 0;
+        buffer_info.range  = vk_buffer->buffer_size;
+
+        VkWriteDescriptorSet descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        descriptor_write.dstSet = scene_uniform_data->descriptor_sets[i];
+        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_write.dstBinding = 0;
+        descriptor_write.pBufferInfo = &buffer_info;
+        descriptor_write.descriptorCount = 1;
+        
+        vkUpdateDescriptorSets(context->logical_device, 1, &descriptor_write, 0, NULL);
+    }
+
+    //per object data
+    for (uint32_t i = 0; i < resources->instance_count; i++) {
+        vulkan_skinned_model_render_data_t* skinned_model_data = (vulkan_skinned_model_render_data_t*)resources->instance_data[i];
+        vulkan_texture_t *vk_texture = bulk_data_getp_null_vulkan_texture_t(&context->textures, skinned_model_data->texture_index);
+
+        for (uint32_t j = 0; j < 3; j++) {
+            vulkan_buffer_t *vk_buffer   = bulk_data_getp_null_vulkan_buffer_t(&context->buffers, skinned_model_data->ssbo_indices[j]);
+
+            VkDescriptorSetAllocateInfo alloc_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            alloc_info.descriptorPool = context->descriptor_pool;
+            alloc_info.pSetLayouts = &vk_shader->layouts[1];
+            alloc_info.descriptorSetCount = 1;
+            VK_CHECK(vkAllocateDescriptorSets(context->logical_device, &alloc_info, &skinned_model_data->descriptor_sets[j]));
+
+            VkDescriptorBufferInfo buffer_info = {0};
+            buffer_info.buffer = vk_buffer->buffer;
+            buffer_info.offset = 0;
+            buffer_info.range  = vk_buffer->buffer_size;
+
+            VkWriteDescriptorSet joint_matrices_descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            joint_matrices_descriptor_write.dstSet = skinned_model_data->descriptor_sets[j];
+            joint_matrices_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            joint_matrices_descriptor_write.dstBinding = 0;
+            joint_matrices_descriptor_write.pBufferInfo = &buffer_info;
+            joint_matrices_descriptor_write.descriptorCount = 1;
+
+            VkDescriptorImageInfo image_info = {0};
+            image_info.imageView = vk_texture->view;
+            image_info.imageLayout = vk_texture->layout;
+            image_info.sampler = vk_texture->sampler;
+
+            VkWriteDescriptorSet texture_descriptor_write = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            texture_descriptor_write.dstSet = skinned_model_data->descriptor_sets[j];
+            texture_descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            texture_descriptor_write.dstBinding = 1;
+            texture_descriptor_write.pImageInfo = &image_info;
+            texture_descriptor_write.descriptorCount = 1;
+
+            VkWriteDescriptorSet descriptor_writes[] = {
+                joint_matrices_descriptor_write,
+                texture_descriptor_write
+            };
+
+            vkUpdateDescriptorSets(context->logical_device, sizeof(descriptor_writes) / sizeof(descriptor_writes[0]), descriptor_writes, 0, NULL);
+        }
+    }
+    return true;
+}
+
+bool vulkan_backend_initialize_shader(renderer_backend_t *backend, shader_t *shader, shader_resource_list_t *resources)
+{
+    vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
+    vulkan_shader_t *vk_shader = (vulkan_shader_t *)shader->internal_data;
+
+    switch(shader->type)
+    {
+        case (SHADER_TYPE_SKINNED_GEOMETRY):
+            skinned_model_update_descriptors(context, vk_shader, resources);
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+
+void *vulkan_backend_create_render_data(struct renderer_backend_t *backend, render_data_config_t *config)
+{
+    void *result = NULL;
+
+    switch(config->type)
+    {
+        case (RENDER_DATA_SKINNED_MODEL):
+        {
+            //! TODO: We need to be able to handle more than one buffer 
+            vulkan_skinned_model_render_data_t *data = memory_alloc(sizeof(vulkan_skinned_model_render_data_t), MEM_TAG_HEAP);
+            for (uint32_t i = 0; i < config->buffer_count; i++) {
+                data->ssbo_indices[i] = config->buffer_indices[i];
+            }
+            data->texture_index = config->texture_indices[0];
+            result = data;
+            break;
+        }
+        
+        case (RENDER_DATA_SCENE_UNIFORMS):
+        {
+            vulkan_uniform_buffer_render_data_t *data = memory_alloc(sizeof(vulkan_skinned_model_render_data_t), MEM_TAG_HEAP);
+            for (uint32_t i = 0; i < 3; i++) {
+                data->buffer_indices[i] = config->buffer_indices[i];
+            }
+            result = data;
+            break;
+        }
+
+        default:
+            LOGE("Shader is not supported");
+            break;
+    }
+    return result;
+}
+
+static bool shader_create_global_descriptor_set_layout(VkDevice logical_device, VkDescriptorSetLayout *layout, renderer_shader_type_e type)
+{
+    VkDescriptorSetLayoutBinding bindings[32];
+    uint32_t binding_count = 0;
+
+    VkDescriptorSetLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    layout_info.flags = 0;
+    layout_info.pBindings = bindings;
+
+    switch(type)
+    {
+        case SHADER_TYPE_SKINNED_GEOMETRY:
+            VkDescriptorSetLayoutBinding matrix_layout_binding = {0};
+            matrix_layout_binding.binding = 0;
+            matrix_layout_binding.descriptorCount = 1;
+            matrix_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            matrix_layout_binding.pImmutableSamplers = NULL;
+            matrix_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+            bindings[0] = matrix_layout_binding;
+            binding_count = 1;
+            break;
+        case SHADER_TYPE_STATIC_GEOMETRY:
+        default:
+            LOGE("Currently only skinned geometry is supported!");
+            break;
+    }
+
+    layout_info.bindingCount = binding_count;
+    VK_CHECK(vkCreateDescriptorSetLayout(logical_device, &layout_info, NULL, layout));
+    
+    return true;
+}
+
+static bool shader_create_instance_descriptor_set_layout(VkDevice logical_device, VkDescriptorSetLayout *layout, renderer_shader_type_e type)
+{
+    VkDescriptorSetLayoutBinding bindings[32];
+    uint32_t binding_count = 0;
+
+    VkDescriptorSetLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+    layout_info.flags = 0;
+    layout_info.pBindings = bindings;
+
+    switch(type)
+    {
+        case SHADER_TYPE_SKINNED_GEOMETRY:
+            VkDescriptorSetLayoutBinding joint_layout_binding = {0};
+            joint_layout_binding.binding = 0;
+            joint_layout_binding.descriptorCount = 1;
+            joint_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            joint_layout_binding.pImmutableSamplers = NULL;
+            joint_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+            VkDescriptorSetLayoutBinding texture_layout_binding = {0};
+            texture_layout_binding.binding = 1;
+            texture_layout_binding.descriptorCount = 1;
+            texture_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            texture_layout_binding.pImmutableSamplers = NULL;
+            texture_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+            bindings[0] = joint_layout_binding;
+            bindings[1] = texture_layout_binding;
+            binding_count = 2;
+            break;
+        case SHADER_TYPE_STATIC_GEOMETRY:
+        default:
+            LOGE("Currently only skinned geometry is supported!");
+            break;
+    }
+    layout_info.bindingCount = binding_count;
+    VK_CHECK(vkCreateDescriptorSetLayout(logical_device, &layout_info, NULL, layout));
+
+    return true;
 }
 
 bool vulkan_backend_create_shader(renderer_backend_t *vulkan_backend, shader_t *shader)
@@ -916,65 +1118,14 @@ bool vulkan_backend_create_shader(renderer_backend_t *vulkan_backend, shader_t *
     shader->internal_data = memory_alloc(sizeof(vulkan_shader_t), MEM_TAG_PERMANENT);
     vulkan_shader_t *vulkan_shader = (vulkan_shader_t *)shader->internal_data;
 
-    //setup descriptor layouts
-    VkDescriptorSetLayoutBinding matrix_layout_binding = {0};
-    matrix_layout_binding.binding = 0;
-    matrix_layout_binding.descriptorCount = 1;
-    matrix_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    matrix_layout_binding.pImmutableSamplers = NULL;
-    matrix_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    //! TODO: what to do if the shader has only one descriptor set layout?
+    shader_create_global_descriptor_set_layout(context->logical_device, &vulkan_shader->layouts[0], shader->type);
+    shader_create_instance_descriptor_set_layout(context->logical_device, &vulkan_shader->layouts[1], shader->type);
 
-    VkDescriptorSetLayoutCreateInfo layout_info = {VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
-    layout_info.bindingCount = 1;
-    layout_info.pBindings = &matrix_layout_binding;
-    layout_info.flags = 0;
-    
-    VK_CHECK(vkCreateDescriptorSetLayout(context->logical_device, &layout_info, NULL, &vulkan_shader->layouts[SCENE_MATRIX_LAYOUT]));
-
-    VkDescriptorSetLayoutBinding joint_layout_binding = {0};
-    joint_layout_binding.binding = 0;
-    joint_layout_binding.descriptorCount = 1;
-    joint_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    joint_layout_binding.pImmutableSamplers = NULL;
-    joint_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    layout_info.pBindings = &joint_layout_binding;
-
-    VK_CHECK(vkCreateDescriptorSetLayout(context->logical_device, &layout_info, NULL, &vulkan_shader->layouts[JOINT_MATRIX_LAYOUT]));
-
-    VkDescriptorSetLayoutBinding texture_layout_binding = {0};
-    texture_layout_binding.binding = 0;
-    texture_layout_binding.descriptorCount = 1;
-    texture_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    texture_layout_binding.pImmutableSamplers = NULL;
-    texture_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    
-    layout_info.pBindings = &texture_layout_binding;
-
-    VK_CHECK(vkCreateDescriptorSetLayout(context->logical_device, &layout_info, NULL, &vulkan_shader->layouts[TEXTURE_LAYOUT]));
-
-    //! NOTE: if context has no uniform buffer for scene matrices, the first shader should create them
-    if (!context->uniform_buffers) {
-        context->uniform_buffers = memory_alloc(context->max_frames_in_flight * sizeof(vulkan_buffer_t), MEM_TAG_PERMANENT);
-        if (!vulkan_backend_create_host_visible_buffer(context, 
-                                                       context->uniform_buffers, 
-                                                       context->max_frames_in_flight,
-                                                       sizeof(uniform_data_t),
-                                                       RENDERBUFFER_TYPE_UNIFORM_BUFFER,
-                                                       vulkan_shader->layouts[SCENE_MATRIX_LAYOUT],
-                                                       VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | 
-                                                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-            return false;
-        }
-
-
-    }
-
-    //pipeline      
-
+    //! TODO: some shaders can have only one descriptor set layout
+    //pipeline
     VkPipelineLayoutCreateInfo pipeline_layout_ci = {VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-    pipeline_layout_ci.setLayoutCount = 3;
+    pipeline_layout_ci.setLayoutCount = 2;
     pipeline_layout_ci.pSetLayouts = vulkan_shader->layouts;
     
     //for model matrix of meshes
@@ -1037,7 +1188,7 @@ bool vulkan_backend_create_shader(renderer_backend_t *vulkan_backend, shader_t *
     VkVertexInputAttributeDescription vertex_input_attributes[] = {
         {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(skinned_vertex_t, pos)},
         {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(skinned_vertex_t, normal)},
-        {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(skinned_vertex_t, uv)},
+        {2, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(skinned_vertex_t, uv)},
         {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(skinned_vertex_t, joint_indices)},
         {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(skinned_vertex_t, joint_weights)}
     };
@@ -1102,16 +1253,6 @@ bool vulkan_backend_use_shader(renderer_backend_t *backend, shader_t *shader)
 {
     vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
     vulkan_shader_t *vulkan_shader = (vulkan_shader_t *)shader->internal_data;
-
-    VkDescriptorSet descriptor_sets[] = {
-       context->uniform_buffers[context->current_frame].descriptor_set,
-    };
-
-    vkCmdBindDescriptorSets(context->command_buffers[context->current_frame],
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            vulkan_shader->pipeline_layout,
-                            0, sizeof(descriptor_sets)/sizeof(descriptor_sets[0]), 
-                            descriptor_sets, 0, NULL);
     vkCmdBindPipeline(context->command_buffers[context->current_frame], VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_shader->pipeline);
     return true;
 }
@@ -1121,23 +1262,24 @@ bool vulkan_backend_create_texture(renderer_backend_t *backend, texture_t *textu
     vulkan_context_t *context = (vulkan_context_t*)backend->internal_context;
     const char *file_extension = find_last_of(file_path, ".");
 
-    //! TODO: fix this immediately
-    vulkan_texture_t vulkan_texture = {0};
+    uint32_t tex_slot = bulk_data_allocate_slot_vulkan_texture_t(&context->textures);
+    vulkan_texture_t *vulkan_texture = bulk_data_getp_null_vulkan_texture_t(&context->textures, tex_slot);
     
     if (strncmp(file_extension, "png", 3) == 0 ||
         strncmp(file_extension, "jpg", 3) == 0) {
-        if (!vulkan_texture_from_file(&vulkan_texture, context, file_path)) {
+        if (!vulkan_texture_from_file(vulkan_texture, context, file_path)) {
             return false;
         }
     } else if (strncmp(file_extension, "ktx", 3) == 0)
     {
-        if (!vulkan_ktx_texture_from_file(&vulkan_texture, context, file_path)) {
+        if (!vulkan_ktx_texture_from_file(vulkan_texture, context, file_path)) {
             return false;
         }
     } else {
         assert(false && "unknown texture file extension");
     }
 
+    texture->internal_data = vulkan_texture;
     //descriptor stuff
     return true;
 }
@@ -1166,14 +1308,16 @@ bool vulkan_backend_end_rendering(renderer_backend_t *backend)
                          0, NULL,
                          1, &barrier);
 
-    vkEndCommandBuffer(context->command_buffers[context->current_frame]);
+    VK_CHECK(vkEndCommandBuffer(context->command_buffers[context->current_frame]));
     return true;
 }
 
 bool vulkan_backend_bind_vertex_buffers(struct renderer_backend_t *backend, renderbuffer_t *buffer)
 {
     vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
-    vulkan_buffer_t *vertex_buffer = (vulkan_buffer_t*)buffer->internal_data;
+
+    uint32_t index = buffer->buffers[0];
+    vulkan_buffer_t *vertex_buffer = bulk_data_getp_null_vulkan_buffer_t(&context->buffers, index);
 
     VkDeviceSize offsets[1] = {0};
     vkCmdBindVertexBuffers(context->command_buffers[context->current_frame], 0, 1, &vertex_buffer->buffer, offsets);
@@ -1183,7 +1327,65 @@ bool vulkan_backend_bind_vertex_buffers(struct renderer_backend_t *backend, rend
 bool vulkan_backend_bind_index_buffers(struct renderer_backend_t *backend, renderbuffer_t *buffer)
 {
     vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
-    vulkan_buffer_t *index_buffer = (vulkan_buffer_t*)buffer->internal_data;
+        
+    uint32_t index = buffer->buffers[0];
+    vulkan_buffer_t *index_buffer = bulk_data_getp_null_vulkan_buffer_t(&context->buffers, index);
+
     vkCmdBindIndexBuffer(context->command_buffers[context->current_frame], index_buffer->buffer, 0, VK_INDEX_TYPE_UINT32);
+    return true;
+}
+
+bool vulkan_backend_push_constants(struct renderer_backend_t *backend, shader_t *shader, const void *data, uint32_t size, uint32_t offset, renderer_shader_stage_e shader_stage)
+{
+    vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
+    vulkan_shader_t *vk_shader = (vulkan_shader_t *)shader->internal_data;
+    
+    VkShaderStageFlagBits shader_stage_bits = (shader_stage == SHADER_STAGE_VERTEX) ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+    vkCmdPushConstants(context->command_buffers[context->current_frame], vk_shader->pipeline_layout, shader_stage_bits, offset, size, data);
+
+    return true;
+}
+
+bool vulkan_backend_draw_indexed(struct renderer_backend_t *backend, int32_t vertex_offset, uint32_t first_index, uint32_t index_count, uint32_t first_instance, uint32_t instance_count)
+{
+    vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
+    vkCmdDrawIndexed(context->command_buffers[context->current_frame], index_count, instance_count, first_index, vertex_offset, first_instance);
+    return true;
+}
+
+bool vulkan_backend_shader_bind_resource(renderer_backend_t *backend, shader_t *shader, render_data_type_e type, void *render_data)
+{
+    vulkan_context_t *context = (vulkan_context_t *)backend->internal_context;
+    vulkan_shader_t *vk_shader = (vulkan_shader_t *)shader->internal_data;
+
+    switch(type)
+    {
+        case (RENDER_DATA_SKINNED_MODEL):
+        {
+            vulkan_skinned_model_render_data_t *skinned_model_data = (vulkan_skinned_model_render_data_t*)render_data;
+
+            vkCmdBindDescriptorSets(context->command_buffers[context->current_frame], 
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS, 
+                                    vk_shader->pipeline_layout, 
+                                    1, 1, 
+                                    &skinned_model_data->descriptor_sets[context->current_frame],
+                                    0, NULL);
+            break;
+        }
+        case (RENDER_DATA_SCENE_UNIFORMS):
+        {
+            vulkan_uniform_buffer_render_data_t *uniform_buffer_data = (vulkan_uniform_buffer_render_data_t*)render_data;
+            vkCmdBindDescriptorSets(context->command_buffers[context->current_frame],
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    vk_shader->pipeline_layout,
+                                    0, 1,
+                                    &uniform_buffer_data->descriptor_sets[context->current_frame],
+                                    0, NULL);
+            break;
+        }
+        default:
+            assert(false && "Only skinned model and uniform buffer data is supported");
+            break;
+    }
     return true;
 }

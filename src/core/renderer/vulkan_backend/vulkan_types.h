@@ -2,7 +2,7 @@
 #define VULKAN_TYPES_H_
 
 #include <vulkan/vulkan.h>
-#include "../../containers/container_types.h"
+#include "../../containers/bulk_data_types.h"
 #include "../../math/math_types.h"
 
 #define MAX_FRAMES_IN_FLIGHT             2
@@ -13,6 +13,7 @@
 #define MAX_SSBO_COUNT                   256
 
 #define MAX_SPRITES_PER_BATCH            1024
+#define MAX_SWAPCHAIN_IMAGE_COUNT        4
 
 #define VK_CHECK(fn) (assert((fn) == VK_SUCCESS))
 
@@ -21,42 +22,45 @@ typedef struct
     mat4f_t projection;
     mat4f_t view;
     //model matrix is a push constant
-}uniform_data_t;
+    vec4f_t light_pos;
+}scene_uniform_data_t;
 
+/**
+ *  @brief: this contains vulkan-specific data that belongs to the skinned model.
+ *          One descriptor set per active frame, and indices of joint matrices and the sampled texture
+ */
 typedef struct 
 {
-    VkDescriptorSet descriptor_set;
-    VkBuffer        buffer;
-    VkDeviceMemory  memory;
-    VkDeviceSize    buffer_size;
-    void           *mapped;
-}vulkan_buffer_t;
+    //! @brief one per frame
+    VkDescriptorSet  descriptor_sets[3];
+    //! @brief one per frame
+    uint32_t         ssbo_indices[3];
+    //! @brief same texture index will be used for all three buffers
+    uint32_t         texture_index;
+}vulkan_skinned_model_render_data_t;
 
-enum 
+/**
+ * @brief: This contains vulkan-specific data for the scene uniforms
+ *         one descriptor set per active frame and the index of the uniform buffer.
+ */
+typedef struct
 {
-    SCENE_MATRIX_LAYOUT,
-    JOINT_MATRIX_LAYOUT,
-    TEXTURE_LAYOUT
-};
+    //! @brief one per frame
+    VkDescriptorSet  descriptor_sets[3];
+    //! @brief one per frame
+    uint32_t         buffer_indices[3];
+}vulkan_uniform_buffer_render_data_t;
 
 typedef struct
 {
-    VkDescriptorSetLayout layouts[3];
-
+    //one layout for globals, one for instances
+    VkDescriptorSetLayout layouts[2];
+    uint32_t              layout_count;
+    
     VkPipelineLayout      pipeline_layout;
     VkPipeline            pipeline;
     VkPipelineCache       pipeline_cache;
 }vulkan_shader_t;
-
-typedef struct
-{
-    uint32_t        w,h;
-    uint32_t        mip_levels;
-    VkImage         image;
-    VkImageView     view;
-    VkSampler       sampler;
-    VkDeviceMemory  memory;
-}vulkan_texture_t;
 
 typedef struct 
 {
@@ -72,7 +76,6 @@ typedef struct
     vec2f_t tex_coord;
 }vertex_t;
 
-BulkDataTypes(vulkan_texture_t);
 /**
  * @brief Vulkan rendering backend internal context
  */
@@ -111,9 +114,6 @@ typedef struct
     VkExtent2D       swapchain_extent;
 
     VkDescriptorPool descriptor_pool;
-    
-    //buffers and descriptors for projviewmodel matrices (one per frame in flight)
-    vulkan_buffer_t  *uniform_buffers;
 
     VkPhysicalDeviceProperties       properties;
     VkPhysicalDeviceFeatures         features;
@@ -123,9 +123,9 @@ typedef struct
     uint32_t    device_extension_name_count;
 
     //swapchain
-    VkImage          *swapchain_images;
-    VkImageView      *swapchain_image_views;
-    uint32_t          swapchain_image_count;
+    VkImage          swapchain_images[4];
+    VkImageView      swapchain_image_views[4];
+    uint32_t         swapchain_image_count;
         
     /**
      * @brief: per frame resources
@@ -135,7 +135,6 @@ typedef struct
     VkSemaphore      *present_complete_semaphores;
     VkFence          *wait_fences;
 
-    vulkan_buffer_t  *render_buffers;
     VkCommandBuffer  *command_buffers;
 
     uint32_t         max_frames_in_flight;
@@ -144,6 +143,7 @@ typedef struct
     bool             validation_enabled;
 
     bulk_data_vulkan_texture_t textures;
+    bulk_data_vulkan_buffer_t  buffers;
 }vulkan_context_t;
 
 

@@ -31,7 +31,8 @@ vec3f_t vec3_normalize(vec3f_t in)
     vec3f_t result = {0};
     float len = sqrtf(in.x * in.x + in.y * in.y + in.z * in.z);
 
-    assert(len > EPSILON);
+    float epsilon = nextafterf(0, INFINITY);
+    assert(len > epsilon);
 
     result.x = in.x / len;
     result.y = in.y / len;
@@ -39,24 +40,24 @@ vec3f_t vec3_normalize(vec3f_t in)
     return result;
 }
 
-void mat4_translate(const mat4f_t *in, mat4f_t *out, float x, float y, float z)
+mat4f_t mat4_translate(float x, float y, float z)
 {
     mat4f_t trans = {0};
-    trans.m[0][0] = 1;
-    trans.m[1][1] = 1;
-    trans.m[2][2] = 1;
-    trans.m[3][3] = 1;
+    trans.m[0][0] = 1.0f;
+    trans.m[1][1] = 1.0f;
+    trans.m[2][2] = 1.0f;
+    trans.m[3][3] = 1.0f;
     trans.m[3][0] = x;
     trans.m[3][1] = y;
     trans.m[3][2] = z;
 
-    mat4_multiply(&trans, in, out);
+    return trans;
 }
 
 /*
     From: https://en.wikipedia.org/wiki/Rotation_matrix#Rotation_matrix_from_axis_and_angle
 */
-void mat4_rotate(const mat4f_t *in, mat4f_t *out, vec3f_t axis, float theta)
+mat4f_t mat4_rotate(vec3f_t axis, float theta)
 {
     axis = vec3_normalize(axis);
 
@@ -75,14 +76,14 @@ void mat4_rotate(const mat4f_t *in, mat4f_t *out, vec3f_t axis, float theta)
 
     rot.m[3][3] = 1.0f;
 
-    mat4_multiply(&rot, in, out);
+    return rot;
 }
 
-void mat4_rotate_w_quat(const mat4f_t *in, mat4f_t *out, quat_t quat)
+mat4f_t mat4_rotate_w_quat(quat_t quat)
 {
     mat4f_t rot = {0};
     quat_to_rot_mat4(quat, &rot);
-    mat4_multiply(&rot, in, out);
+    return rot;
 }
 
 mat4f_t mat4_identity(void)
@@ -95,7 +96,7 @@ mat4f_t mat4_identity(void)
     return result;
 }
 
-void mat4_scale(const mat4f_t *in, mat4f_t *out, float x, float y, float z)
+mat4f_t mat4_scale(float x, float y, float z)
 {
    mat4f_t scale = mat4_identity();
 
@@ -103,7 +104,7 @@ void mat4_scale(const mat4f_t *in, mat4f_t *out, float x, float y, float z)
    scale.m[1][1] = y;
    scale.m[2][2] = z; 
 
-   mat4_multiply(&scale, in, out);
+   return scale;
 }
 
 vec3f_t vec3_subtract(vec3f_t a, vec3f_t b)
@@ -134,7 +135,7 @@ void mat4_look_at(vec3f_t from, vec3f_t to, vec3f_t arbitrary_up, mat4f_t *mat)
 {
     vec3f_t forward = vec3_normalize(vec3_subtract(from, to));
     vec3f_t right = vec3_normalize(vec3_cross(arbitrary_up, forward));
-    vec3f_t up = vec3_normalize(vec3_cross(forward, right));
+    vec3f_t up = vec3_cross(forward, right);
 
     mat->m[0][0] = right.x;
     mat->m[1][0] = right.y;
@@ -182,27 +183,15 @@ void mat4_orthographic(float bottom, float top, float left, float right, float n
 
 void mat4_perspective(float half_theta, float aspect, float near, float far, mat4f_t *mat)
 {
-    float c = 1.0f / tanf(half_theta);
+    memset(mat, 0, sizeof(*mat));
+
+    float tan_half_theta = tanf(half_theta);
     
-    mat->m[0][0] = c / aspect;
-    mat->m[0][1] = 0;
-    mat->m[0][2] = 0;
-    mat->m[0][3] = 0;
-
-    mat->m[1][0] = 0;
-    mat->m[1][1] = -c;
-    mat->m[1][2] = 0;
-    mat->m[1][3] = 0;
-
-    mat->m[2][0] = 0;
-    mat->m[2][1] = 0;
-    mat->m[2][2] = -(far + near) / (far - near);
-    mat->m[2][3] = -1;
-
-    mat->m[3][0] = 0;
-    mat->m[3][1] = 0;
-    mat->m[3][2] = -(2 *far * near) / (far - near);
-    mat->m[3][3] = 0;
+    mat->m[0][0] = 1.0f / (aspect * tan_half_theta);
+    mat->m[1][1] = 1.0f / (tan_half_theta);
+    mat->m[2][2] = far / (near - far);
+    mat->m[2][3] = -1.0f;
+    mat->m[3][2] = -(far * near)/(far - near);
 }
 
 void mat4_transpose(const mat4f_t *mat, mat4f_t *out)
@@ -287,7 +276,7 @@ vec2f_t vec2_normalize(vec2f_t in)
 {
     vec2f_t result = {0,0};
     float len = sqrtf(in.x * in.x + in.y * in.y);
-    if (len > EPSILON) {
+    if (len > nextafterf(0, INFINITY)) {
         result.x = in.x / len;
         result.y = in.y / len;
     }
@@ -317,44 +306,139 @@ vec2f_t vec2_add(vec2f_t a, vec2f_t b)
 
 void quat_to_rot_mat4(quat_t quat, mat4f_t *rot)
 {
-    rot->m[0][0] = 1 - 2 * quat.y * quat.y - 2 * quat.z * quat.z;
-    rot->m[0][1] = 2 * quat.x * quat.y - 2 * quat.z * quat.w;
-    rot->m[0][2] = 2 * quat.x * quat.z + 2 * quat.y * quat.w;
-    rot->m[0][3] = 0;
+    rot->m[0][0] = 1.0f - 2 * (quat.y * quat.y + quat.z * quat.z) ;
+    rot->m[0][1] = 2.0f * (quat.x * quat.y + quat.w * quat.z);
+    rot->m[0][2] = 2.0f * (quat.x * quat.z - quat.w * quat.y);
+    rot->m[0][3] = 0.0f;
 
-    rot->m[1][0] = 2 * quat.x * quat.y + 2 * quat.z * quat.w;
-    rot->m[1][1] = 1 - 2 * quat.x * quat.x - 2 * quat.z * quat.z;
-    rot->m[1][2] = 2 * quat.y * quat.z - 2 * quat.x * quat.w;
+    rot->m[1][0] = 2.0f * (quat.x * quat.y - quat.w * quat.z);
+    rot->m[1][1] = 1.0f - 2.0f * (quat.z * quat.z + quat.x * quat.x);
+    rot->m[1][2] = 2.0f * (quat.y * quat.z + quat.w * quat.x);
     rot->m[1][3] = 0;
 
-    rot->m[2][0] = 2 * quat.x * quat.z - 2 * quat.y * quat.w;
-    rot->m[2][1] = 2 * quat.y * quat.z + 2 * quat.x * quat.w;
-    rot->m[2][2] = 1 - 2 * quat.x * quat.x - 2 * quat.y * quat.y;
+    rot->m[2][0] = 2.0f * (quat.x * quat.z + quat.w * quat.y);
+    rot->m[2][1] = 2.0f * (quat.y * quat.z - quat.w * quat.x);
+    rot->m[2][2] = 1.0f - 2.0f * (quat.x * quat.x + quat.y * quat.y);
     rot->m[2][3] = 0;
 
     rot->m[3][0] = 0;
     rot->m[3][1] = 0;
     rot->m[3][2] = 0;
-    rot->m[3][3] = 1;
+    rot->m[3][3] = 1.0f;
 }
 
 void transform_from_TRS(mat4f_t *transform, vec3f_t translation, quat_t rotation, vec3f_t scale)
 {
-    mat4f_t mat = mat4_identity();
-
-    mat4f_t scale_mat = {0};
-    mat4f_t rot_mat = {0};
-    mat4f_t trans_mat = {0};
-
-    mat4_scale(&mat, &scale_mat, scale.x, scale.y, scale.z);
-    mat4_rotate_w_quat(&mat, &rot_mat, rotation);
-    mat4_translate(&mat, &trans_mat, translation.x, translation.y, translation.z);
+    mat4f_t scale_mat = mat4_scale(scale.x, scale.y, scale.z);
+    mat4f_t rot_mat = mat4_rotate_w_quat(rotation);
+    mat4f_t trans_mat = mat4_translate(translation.x, translation.y, translation.z);
 
     mat4f_t scaled = {0};
     mat4f_t rotated = {0};
 
-    mat4_multiply(&mat, &scale_mat, &scaled);
+    mat4f_t temp = *transform;
+    
+    mat4_multiply(&temp, &scale_mat, &scaled);
     mat4_multiply(&scaled, &rot_mat, &rotated);
     mat4_multiply(&rotated, &trans_mat, transform);
+}
+
+vec3f_t vec3_lerp(vec3f_t a, vec3f_t b, float t)
+{
+    vec3f_t result = {0};
+    result.x = a.x * (1.0f - t) + b.x * t;
+    result.y = a.y * (1.0f - t) + b.y * t;
+    result.z = a.z * (1.0f - t) + b.z * t;
+    return result; 
+}
+
+vec4f_t vec4_normalize(vec4f_t in)
+{
+    vec4f_t result = {0};
+    float len = sqrtf(in.x * in.x + in.y * in.y + in.z * in.z + in.w * in.w);
+
+    float epsilon = nextafterf(0, INFINITY);
+    assert(len > epsilon);
+
+    result.x = in.x / len;
+    result.y = in.y / len;
+    result.z = in.z / len;
+    result.w = in.w / len;
+    return result;
+}
+
+vec4f_t vec4_lerp(vec4f_t a, vec4f_t b, float t)
+{
+    vec4f_t result = {0};
+    result.x = a.x * (1.0f - t) + b.x * t;
+    result.y = a.y * (1.0f - t) + b.y * t;
+    result.z = a.z * (1.0f - t) + b.z * t;
+    result.w = a.w * (1.0f - t) + b.w * t;
+    return result;
+}
+
+static float quat_dot(quat_t a, quat_t b)
+{
+    return (a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z);
+}
+
+quat_t quat_normalize(quat_t in)
+{
+    quat_t result = {0};
+    float len = sqrtf(in.x * in.x + in.y * in.y + in.z * in.z + in.w * in.w);
+
+    float epsilon = nextafterf(0, INFINITY);
+    if (len < epsilon) {
+        return result;
+    }
+
+    result.x = in.x / len;
+    result.y = in.y / len;
+    result.z = in.z / len;
+    result.w = in.w / len;
+
+    return result;
+}
+
+quat_t quat_lerp(quat_t a, quat_t b, float t)
+{
+    quat_t result = {0};
+    result.w = a.w * (1.0f - t) + b.w * t;
+    result.x = a.x * (1.0f - t) + b.x * t;
+    result.y = a.y * (1.0f - t) + b.y * t;
+    result.z = a.z * (1.0f - t) + b.z * t;
+    return result;
+}
+
+quat_t quat_slerp(quat_t a, quat_t b, float t)
+{
+    quat_t result = {0};
+
+    quat_t z = b;
+
+    float cos_theta = quat_dot(a,b);
+    
+    //if dot is negative, the slerp will take the long way around the sphere
+    //negate one to fix this
+    if (cos_theta < 0) {
+        z.x *= -1.0f;
+        z.y *= -1.0f;
+        z.z *= -1.0f;
+        z.w *= -1.0f;
+
+        cos_theta = -cos_theta;
+    }
+
+    //perform a linear interpolation when cos_theta is close to one to avoid side effect of sin(angle) becoming a zero denominator
+    if (cos_theta > nextafterf(1.0f, -INFINITY)) {
+        result = quat_lerp(a,z,t);
+    } else {
+        float angle = acosf(cos_theta);
+        result.w = a.w * sinf((1.0f - t) * angle) + z.w * sinf(t * angle) / sinf(angle);
+        result.x = a.x * sinf((1.0f - t) * angle) + z.x * sinf(t * angle) / sinf(angle);
+        result.y = a.y * sinf((1.0f - t) * angle) + z.y * sinf(t * angle) / sinf(angle);
+        result.z = a.z * sinf((1.0f - t) * angle) + z.z * sinf(t * angle) / sinf(angle);
+    }
+    return result;
 }
 

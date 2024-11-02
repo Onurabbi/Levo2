@@ -3,29 +3,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "../../containers/container_types.h"
 #include "../../platform/platform.h"
 
-typedef enum
-{
-    DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-}renderer_descriptor_type_e;
-
-typedef enum
-{
-    DESCRIPTOR_BINDING_VERTEX_SHADER_STAGE,
-    DESCRIPTOR_BINDING_FRAGMENT_SHADER_STAGE,
-}renderer_descriptor_binding_e;
-
-typedef enum
-{
-    RENDERBUFFER_TYPE_VERTEX_BUFFER,
-    RENDERBUFFER_TYPE_INDEX_BUFFER,
-    RENDERBUFFER_TYPE_UNIFORM_BUFFER,
-    RENDERBUFFER_TYPE_STAGING_BUFFER,
-    RENDERBUFFER_TYPE_READ_BUFFER,
-    RENDERBUFFER_TYPE_STORAGE_BUFFER
-}renderbuffer_type_e;
+#define MAX_SSBO_PER_SKINNED_MODEL       32
+#define MAX_TEXTURES_PER_SKINNED_MODEL   32
 
 typedef enum
 {
@@ -86,12 +67,36 @@ typedef enum
     RENDERER_CONFIG_FLAG_ENABLE_VALIDATION = 0x4,
 }renderer_config_flag_bit_e;
 
+typedef enum
+{
+    RENDER_DATA_SCENE_UNIFORMS,
+    RENDER_DATA_SKINNED_MODEL,
+    RENDER_DATA_STATIC_MODEL,
+}render_data_type_e;
+
+typedef struct
+{
+    render_data_type_e type;
+
+    uint32_t buffer_indices[MAX_SSBO_PER_SKINNED_MODEL];
+    uint32_t buffer_count;
+
+    uint32_t texture_indices[MAX_TEXTURES_PER_SKINNED_MODEL];
+    uint32_t texture_count;
+} render_data_config_t;
+
+typedef enum 
+{
+    SHADER_STAGE_VERTEX,
+    SHADER_STAGE_FRAGMENT,
+}renderer_shader_stage_e;
+
 typedef unsigned int renderer_config_flags_t;
 
 typedef struct 
 {
-    const char              *app_name;
-    renderer_config_flags_t flags;
+    const char                 *app_name;
+    renderer_config_flags_t     flags;
 }renderer_config_t;
 
 typedef struct
@@ -101,27 +106,38 @@ typedef struct
 
 typedef struct
 {
-    void *internal_data;
+    renderer_shader_type_e type;
+    void                   *internal_data;
 }shader_t;
 
 typedef struct
 {
-    void *internal_data;//api specific data
-}texture_t;
+    vec3f_t position;
+    vec3f_t front;
+    vec3f_t up;
+    vec3f_t right;
+    vec3f_t world_up;
+
+    float yaw;
+    float pitch;
+
+    float fov;
+    float aspect;
+    float znear;
+    float zfar;
+}camera_t;
 
 /**
- * @brief: API agnostic general purpose buffer structure
- * this is used for everything vulkan_buffer_t is used for i.e: uniform buffers, vertex/index buffers etc. 
+ * @brief uniform buffer + array of skinned model render data
  */
-typedef struct
+typedef struct 
 {
-    //! Api specific data
-    void *internal_data;
-
-    renderbuffer_type_e type;
-    uint32_t            used;
-    uint32_t            size;
-}renderbuffer_t;
+    //! @brief scene uniforms
+    void      *globals_data;
+    //! @brief 
+    void     **instance_data;
+    uint32_t   instance_count;
+}shader_resource_list_t;
 
 /**
  * @brief For now we won't have a front-end structure to hold api-agnostic render data
@@ -137,42 +153,50 @@ typedef struct renderer_backend_t
     /**
      * @brief initialize includes window swapchain creation too.
      */
-    bool (*initialize)(struct renderer_backend_t *renderer, window_t *window, renderer_config_t *config);
-    void (*shutdown)(struct renderer_backend_t *renderer);
-    void (*window_destroy)(struct renderer_backend_t *renderer, window_t *window);
-    bool (*frame_prepare)(struct renderer_backend_t *renderer, frame_data_t *frame_data);
-    bool (*begin_rendering)(struct renderer_backend_t *renderer);
-    bool (*end_rendering)(struct renderer_backend_t *renderer);
-    bool (*set_viewport)(struct renderer_backend_t *renderer, float w, float h, float minz, float maxz);
-    bool (*set_scissor)(struct renderer_backend_t *renderer,float x, float y, float w, float h);
-    uint32_t (*get_num_frames_in_flight)(struct renderer_backend_t *renderer);
-    bool (*create_renderbuffer)(struct renderer_backend_t *renderer, renderbuffer_t *renderbuffer, renderbuffer_type_e type,shader_t *shader, uint8_t *buffer_data, uint32_t size);
-    void (*copy_to_renderbuffer)(struct renderer_backend_t *renderer, renderbuffer_t *renderbuffer, void *data, uint32_t size);
-    bool (*create_shader)(struct renderer_backend_t *renderer, shader_t *shader);
-    bool (*use_shader)(struct renderer_backend_t *renderer, shader_t * shader);
-    bool (*create_texture)(struct renderer_backend_t *renderer, texture_t *texture, const char *);
-    bool (*bind_vertex_buffers)(struct renderer_backend_t *renderer, renderbuffer_t *vertex_buffer);
-    bool (*bind_index_buffers)(struct renderer_backend_t *renderer, renderbuffer_t *index_buffer);
+    bool (*initialize)(struct renderer_backend_t *, window_t *, renderer_config_t *);
+    void (*shutdown)(struct renderer_backend_t *);
+    void (*window_destroy)(struct renderer_backend_t *, window_t *);
+    bool (*frame_prepare)(struct renderer_backend_t *, frame_data_t *);
+    bool (*begin_rendering)(struct renderer_backend_t *);
+    bool (*end_rendering)(struct renderer_backend_t *);
+    bool (*set_viewport)(struct renderer_backend_t *, float, float, float, float);
+    bool (*set_scissor)(struct renderer_backend_t *,float, float, float, float);
+    uint32_t (*get_num_frames_in_flight)(struct renderer_backend_t *);
+    bool (*create_renderbuffer)(struct renderer_backend_t *, renderbuffer_t *, renderbuffer_type_e, uint8_t *, uint32_t);
+    void (*copy_to_renderbuffer)(struct renderer_backend_t *, renderbuffer_t *, void *, uint32_t);
+    bool (*bind_buffer)(struct renderer_backend_t *, renderbuffer_t*, shader_t*);
+    bool (*create_shader)(struct renderer_backend_t *, shader_t *);
+    bool (*use_shader)(struct renderer_backend_t *, shader_t *);
+    bool (*shader_bind_resource)(struct renderer_backend_t *, shader_t *, render_data_type_e, void *);
+    void*(*create_render_data)(struct renderer_backend_t *,render_data_config_t *config);
+    bool (*initialize_shader)(struct renderer_backend_t *, shader_t *,  shader_resource_list_t *);
+    bool (*create_texture)(struct renderer_backend_t *, texture_t *, const char *);
+    bool (*bind_vertex_buffers)(struct renderer_backend_t *, renderbuffer_t *);
+    bool (*bind_index_buffers)(struct renderer_backend_t *, renderbuffer_t *);
+    bool (*frame_submit)(struct renderer_backend_t *, frame_data_t *);
+    bool (*push_constants)(struct renderer_backend_t *, shader_t *, const void *,uint32_t, uint32_t, renderer_shader_stage_e);
+    bool (*draw_indexed)(struct renderer_backend_t *,int32_t,uint32_t, uint32_t,uint32_t,uint32_t);
 }renderer_backend_t;
 
 typedef struct 
 {
     renderer_backend_t *backend;
+    shader_t           *current_shader;
     
-    renderbuffer_t     *renderbuffers;
-    uint32_t            renderbuffer_count;
-
+    //scene matrices
+    uint32_t  uniform_buffer_index;
+    void     *uniform_buffer_render_data;
+    
+    //in permanent memory
     shader_t           *shaders;
+    uint32_t            shader_count;
 
-    //textures
+    camera_t            camera;
+
     //render target count
-    //vertex buffer
-    //index buffer
     uint32_t current_frame;
     uint32_t max_frames_in_flight;
 }renderer_t;
-
-BulkDataTypes(texture_t);
 
 #endif
 

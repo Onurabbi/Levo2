@@ -3,7 +3,7 @@
 
 #include "../../game_types.h"
 
-gltf_model_t *model_load_from_gltf(const char * path);
+gltf_model_t *model_load_from_gltf(const char * path, const char *asset_id);
 #endif
 
 

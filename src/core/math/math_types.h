@@ -1,7 +1,6 @@
 #ifndef MATH_TYPES_H_
 #define MATH_TYPES_H_
 
-#define EPSILON 0.000001f
 #define PI 3.14159265358979323846
 #define MAX(a,b) ((a) > (b) ? (a) : (b))
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
@@ -51,7 +50,7 @@ typedef struct
 
 typedef struct
 {
-    float x,y,z,w;
+    float w,x,y,z;
 }quat_t;
 
 #endif

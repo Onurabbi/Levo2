@@ -134,7 +134,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     texture->h = h;
     texture->mip_levels = mip_levels;
 
-    VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
     
     vulkan_buffer_t staging_buffer;
     create_vulkan_buffer(&staging_buffer,
@@ -225,6 +225,8 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     vkDestroyBuffer(context->logical_device, staging_buffer.buffer,NULL);
     vkFreeMemory(context->logical_device, staging_buffer.memory, NULL);
 
+    texture->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
     VkImageViewCreateInfo viewInfo = {};
     viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image    = texture->image;
@@ -254,7 +256,6 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     VK_CHECK(vkCreateSampler(context->logical_device, &samplerInfo, NULL, &texture->sampler));
 }
-
 
 bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_context_t *context, const char *file_path)
 {
@@ -353,6 +354,8 @@ bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_context_t *c
     vkFreeMemory(context->logical_device, staging_buffer.memory, NULL);
 
     ktxTexture_Destroy(ktx_texture);
+
+    texture->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkImageViewCreateInfo viewInfo = {};
     viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;

@@ -32,10 +32,10 @@ void move_entity(entity_t *e, vec2f_t dp, bulk_data_entity_t *bd)
     entity_t *colliding_entities[4];
     uint32_t  colliding_entity_count = 0;
 
-    for (uint32_t j = 0; j < bulk_data_size(bd); j++) {
+    for (uint32_t j = 0; j < bd->count; j++) {
         if (colliding_entity_count == 4) break;
         
-        entity_t *other = bulk_data_getp_null(bd, j);
+        entity_t *other = bulk_data_getp_null_entity_t(bd, j);
 
         if (other) {
             if (other == e) continue;

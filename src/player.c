@@ -49,16 +49,6 @@ void update_player(entity_t              *e,
             assert(false && "unknown entity state");
             break;
     }
-
-    animation_update_result_t update_result = {0};
-    update_result = animation_update(player->animation_chunks, 
-                                     player->animation_chunk_count, 
-                                     player->current_animation, 
-                                     e->state, 
-                                     delta_time,
-                                     player->anim_timer);
-    player->current_animation = update_result.animation;
-    player->anim_timer = update_result.timer;
     
     //first move the entity
     move_entity(e, dp, entities);

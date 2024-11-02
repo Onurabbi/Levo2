@@ -29,3 +29,4 @@ void create_vulkan_buffer(vulkan_buffer_t *buffer,
 
     buffer->buffer_size = size;
 }
+
