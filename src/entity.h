@@ -3,7 +3,6 @@
 
 #include "game_types.h"
 #include "core/asset_store/cJSON.h"
-#include "core/containers/container_types.h"
 
 void move_entity(entity_t *e, vec2f_t dp, bulk_data_entity_t *bd);
 #endif

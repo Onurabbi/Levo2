@@ -37,25 +37,16 @@ bool ray_vs_rect(vec2f_t ray_origin, vec2f_t ray_dir, rect_t target, vec2f_t *co
     
     *contact_point = (vec2f_t){ray_origin.x + ray_dir.x * (*t_hit_near), ray_origin.y + ray_dir.y * (*t_hit_near)};
 
-    if (t_near_x > t_near_y)
-    {
-        if (ray_dir.x < 0)
-        {
+    if (t_near_x > t_near_y) {
+        if (ray_dir.x < 0) {
             *contact_normal = (vec2f_t){1,0};
-        }
-        else
-        {
+        } else {
             *contact_normal = (vec2f_t){-1,0};
         }
-    }
-    else if (t_near_x < t_near_y)
-    {
-        if (ray_dir.y < 0)
-        {
+    } else if (t_near_x < t_near_y) {
+        if (ray_dir.y < 0) {
             *contact_normal = (vec2f_t){0,1};
-        }
-        else
-        {
+        } else {
             *contact_normal = (vec2f_t){0,-1};
         }
     }

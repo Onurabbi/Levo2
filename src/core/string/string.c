@@ -56,10 +56,8 @@ const char *string_duplicate(const char* str, memory_tag_t tag)
 static inline bool find_in_delim(const char *delim, char c)
 {
     const char *ptr = delim;
-    while(*ptr)
-    {
-        if (*ptr++ == c)
-        return true;
+    while(*ptr) {
+        if (*ptr++ == c) return true;
     }
     return false;
 }
@@ -69,8 +67,7 @@ const char *find_last_of(const char *str, const char *delim)
     const char *last_delim = NULL;
     const char *ptr        = str;
 
-    while (*ptr)
-    {
+    while (*ptr) {
         if (find_in_delim(delim, *ptr)) last_delim = ptr;
         ptr++;
     }
@@ -83,8 +80,7 @@ const char *file_name_wo_extension(const char *file_name, memory_tag_t tag)
     const char *start = find_last_of(file_name, "/\\");
     const char *end   = start;
 
-    while (*end)
-    {
+    while (*end) {
         if (*end == '.') break;
         end++;
     }

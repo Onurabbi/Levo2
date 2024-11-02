@@ -1,5 +1,5 @@
+#include "core/containers/bulk_data.inc"
 #include "game.h"
-#include "core/containers/containers.c"
 #include "entity.c"
 #include "player.c"
 #include "widget.c"
@@ -15,7 +15,9 @@
 #include "core/utils/utils.c"
 #include "core/asset_store/asset_store.c"
 #include "core/input/input.c"
-#include "core/vulkan_renderer/vulkan_renderer.c"
+#include "core/renderer/frontend/camera.c"
+#include "core/renderer/frontend/renderer.c"
+#include "core/renderer/vulkan_backend/vulkan_backend.c"
 
 #include <time.h>
 #include <SDL2/SDL.h>
@@ -23,477 +25,133 @@
 #include <string.h>
 
 #define DELTA_TIME   1.0 / 60.0
-#define TILE_COUNT_X 30
 
-
-static void model_load_materials(gltf_model_t *gltf_model, model_t *model)
+static void skinned_model_update_animation(skinned_model_t *model, renderer_t *renderer, bulk_data_renderbuffer_t *bd, float dt)
 {
-    model->material_count = gltf_model->material_count;
-    model->materials = memory_alloc(model->material_count * sizeof(material_t), MEM_TAG_HEAP);
-
-    for (uint32_t i = 0; i < model->material_count; i++)
-    {
-        gltf_material_t *gltf_material = &gltf_model->materials[i];
-        material_t *material = &model->materials[i];
-
-        material->base_color_factor = gltf_material->pbr_metallic_roughness.base_color_factor;
-        material->base_color_texture_index = gltf_material->pbr_metallic_roughness.base_color_texture_index;
+    if (model->active_animation > model->animation_count - 1) {
+        LOGE("No animation with index %u", model->active_animation);
     }
-}
-
-static void model_load_textures(gltf_model_t *gltf_model, model_t *model, asset_store_t* asset_store, vulkan_renderer_t *renderer)
-{
-    const char *model_file_name = file_name_wo_extension(gltf_model->path, MEM_TAG_TEMP);
-
-    model->textures      = memory_alloc(sizeof(vulkan_texture_t) * gltf_model->image_count, MEM_TAG_HEAP);
-    model->texture_count = gltf_model->image_count;
-
-    for (uint32_t i = 0; i < model->texture_count; i++)
-    {
-        const char *file_path = gltf_model->image_paths[i];
-        const char *asset_id  = format_string(MEM_TAG_PERMANENT,"%s-%u", model_file_name, i);
-
-        asset_store_add_texture(asset_store, renderer, asset_id, file_path);
-        model->textures[i] = asset_store_get_texture(asset_store, asset_id);
-    }
-}
-
-static void load_node(gltf_model_t *gltf_model,
-                      model_t *model,
-                      gltf_node_t *gltf_node,   //source node
-                      model_node_t *model_node, //destination node
-                      uint32_t parent,          //parent node index
-                      uint32_t node_index)      //current node index
-{
-    model_node->local_transform = gltf_node->local_transform;
-    model_node->parent = parent;
-    model_node->index  = node_index;
-    model_node->skin   = gltf_node->skin;
-    model_node->mesh   = gltf_node->mesh;
-
-    //load children
-    for (uint32_t i = 0; i < gltf_node->child_count; i++)
-    {
-        uint32_t child_index = gltf_node->children[i];
-        load_node(gltf_model, model, &gltf_model->nodes[child_index], &model->nodes[child_index], node_index, child_index);
-    }
-}
-
-static void load_nodes(gltf_model_t *gltf_model, model_t *model)
-{
-    model->node_count = gltf_model->node_count;
-    model->nodes = memory_alloc(sizeof(model_node_t) * model->node_count, MEM_TAG_HEAP);
-
-    gltf_scene_t *scene = &gltf_model->scenes[0];
-    for (uint32_t i = 0; i < scene->node_count; i++)
-    {
-        uint32_t node_index = scene->nodes[i];
-        load_node(gltf_model, 
-                  model,
-                  &gltf_model->nodes[node_index], 
-                  &model->nodes[node_index], 
-                  UINT32_MAX, 
-                  node_index);
-    }
-}
-
-static void load_skins(gltf_model_t *gltf_model, model_t *model, vulkan_renderer_t *renderer)
-{
-    model->skin_count = gltf_model->skin_count;
-    model->skins = memory_alloc(sizeof(skin_t) * model->skin_count, MEM_TAG_HEAP);
-    
-    for (uint32_t i = 0; i < gltf_model->skin_count; i++)
-    {
-        gltf_skin_t *gltf_skin = &gltf_model->skins[i];
-        skin_t *skin = &model->skins[i];
-
-        skin->joint_count = gltf_skin->joint_count;
-        skin->joints = memory_alloc(skin->joint_count * sizeof(uint32_t), MEM_TAG_HEAP);
-        memmove(skin->joints, gltf_skin->joints, skin->joint_count * sizeof(uint32_t));
-
-        //inverse bind matrices
-        if (gltf_skin->inverse_bind_matrices != UINT32_MAX)
-        {
-            gltf_accessor_t *accessor = &gltf_model->accessors[gltf_skin->inverse_bind_matrices];
-            gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-            gltf_buffer_t      *buf   = &gltf_model->buffers[bv->buffer];
-
-            skin->inverse_bind_matrix_count = accessor->count;
-            skin->inverse_bind_matrices     = memory_alloc(sizeof(mat4f_t) * skin->inverse_bind_matrix_count, MEM_TAG_HEAP);
-            memcpy(skin->inverse_bind_matrices, &buf->data[accessor->byte_offset + bv->byte_offset], accessor->count * sizeof(mat4f_t));
-
-            // create ssbo
-            VkDeviceSize ssbo_size = skin->inverse_bind_matrix_count * sizeof(mat4f_t);
-            create_vulkan_buffer(&skin->ssbo, 
-                                 renderer, 
-                                 ssbo_size, 
-                                 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, 
-                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-            vkMapMemory(renderer->logical_device, skin->ssbo.memory, 0, ssbo_size, 0, &skin->ssbo.mapped);
-        }
+    animation_t *animation = &model->animations[model->active_animation];
+    animation->current_time += dt;
+    //!NOTE: looping
+    if (animation->current_time > animation->end_time) {
+        animation->current_time -= animation->end_time;
     }
 
-}
+    for (uint32_t i = 0 ; i < animation->channel_count; i++) {
+        animation_channel_t *channel = &animation->channels[i];
+        animation_sampler_t *sampler = &animation->samplers[channel->sampler];
 
-static void load_animations(gltf_model_t *gltf_model, model_t *model)
-{
-    model->animation_count = gltf_model->animation_count;
-    model->animations = memory_alloc(model->animation_count * sizeof(animation_t), MEM_TAG_HEAP);
-
-    for (uint32_t i = 0; i < model->animation_count; i++)
-    {
-        gltf_animation_t *gltf_animation = &gltf_model->animations[i];
-        animation_t *animation = &model->animations[i];
-
-        //samplers
-        animation->sampler_count = gltf_animation->sampler_count;
-        animation->samplers = memory_alloc(animation->sampler_count * sizeof(animation_sampler_t), MEM_TAG_HEAP);
-        animation->start_time = INFINITY;
-        animation->end_time = -INFINITY;
-
-        for (uint32_t j = 0; j < animation->sampler_count; j++)
-        {
-            gltf_animation_sampler_t *gltf_sampler = &gltf_animation->samplers[j];
-            animation_sampler_t *sampler = &animation->samplers[j];
-
-            sampler->interpolation = gltf_sampler->interpolation;
-
-            //sampler keyframe and input time values
-            {
-                gltf_accessor_t *accessor = &gltf_model->accessors[gltf_sampler->input];
-                gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                gltf_buffer_t *buffer     = &gltf_model->buffers[bv->buffer];
-                const void *data          = &buffer->data[accessor->byte_offset + bv->byte_offset];
-                const float *dst          = (float*)data;
-
-                sampler->input_count = accessor->count;
-                sampler->inputs      = memory_alloc(sampler->input_count * sizeof(float), MEM_TAG_HEAP);
-                memcpy(sampler->inputs, dst, bv->byte_length);
-
-                for (uint32_t k = 0; k < animation->samplers[j].input_count; k++)
-                {
-                    float input = animation->samplers[j].inputs[k];
-                    if (input < animation->start_time)
-                    {
-                        animation->start_time = input;
-                    }
-                    if (input > animation->end_time)
-                    {
-                        animation->end_time = input;
-                    }
-                }
+        for (uint32_t j = 0; j < sampler->input_count - 1; j++) {
+            //! TODO: fix this at some point 
+            if (sampler->interpolation != LINEAR_INTERPOLATION) {
+                LOGE("We only support linear interpolation!");
+                continue;
             }
 
-            //read sampler keyframe output translate/rotate/scale values
-            {
-                gltf_accessor_t *accessor = &gltf_model->accessors[gltf_sampler->input];
-                gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                gltf_buffer_t *buffer     = &gltf_model->buffers[bv->buffer];
-                const void *data          = &buffer->data[accessor->byte_offset + bv->byte_offset];
+            if ((animation->current_time >= sampler->inputs[j]) && (animation->current_time <= sampler->inputs[j + 1])) {
+                float t = (animation->current_time - sampler->inputs[j]) / (sampler->inputs[j + 1] - sampler->inputs[j]);
+                model_node_t *node = &model->nodes[channel->node];
+                if (channel->path == TRANSLATION) {
+                    vec4f_t trans = vec4_lerp(sampler->outputs[j], sampler->outputs[j + 1], t);
+                    node->translation.x = trans.x;
+                    node->translation.y = trans.y;
+                    node->translation.z = trans.z;
+                } else if(channel->path == ROTATION) {
+                    quat_t q1 = {};
+                    q1.x = sampler->outputs[j].x;
+                    q1.y = sampler->outputs[j].y;
+                    q1.z = sampler->outputs[j].z;
+                    q1.w = sampler->outputs[j].w;
 
-                switch(accessor->type)
-                {
-                    case VEC3:
-                    {
-                        const vec3f_t *buf = (const vec3f_t *)data;
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
-                            vec3f_t *vec3 = &buf[index];
-                            vec4f_t *vec4 = &sampler->outputs[index];
-                            vec4->x = vec3->x;
-                            vec4->y = vec3->y;
-                            vec4->z = vec3->z;
-                            vec4->w = 0;
-                        }
-                        break;
-                    }
-                    case VEC4:
-                    {
-                        const vec4f_t *buf = (const vec4f_t*)data;
-                        memcpy(sampler->outputs, buf, bv->byte_length);
-                        break;
-                    }
+                    quat_t q2 = {};
+                    q2.x = sampler->outputs[j + 1].x;
+                    q2.y = sampler->outputs[j + 1].y;
+                    q2.z = sampler->outputs[j + 1].z;
+                    q2.w = sampler->outputs[j + 1].w;
+
+                    node->rotation = quat_normalize(quat_lerp(q1, q2, t));
+                } else if (channel->path == SCALE) {
+                    vec4f_t scale = vec4_lerp(sampler->outputs[j], sampler->outputs[j + 1], t);
+                    node->scale = (vec3f_t){scale.x, scale.y, scale.z};
                 }
-            }
-
-            //channels
-            animation->channel_count = gltf_animation->channel_count;
-            animation->channels      = memory_alloc(animation->channel_count * sizeof(animation_t), MEM_TAG_HEAP);
-
-            for (uint32_t k = 0; k < animation->channel_count; k++)
-            {
-                gltf_channel_t *gltf_channel = &gltf_animation->channels[k];
-                animation_channel_t *channel = &animation->channels[k];
-                channel->path    = gltf_channel->path;
-                channel->sampler = gltf_channel->sampler;
-                channel->node    = gltf_channel->node;
             }
         }
     }
+#if 0
+    for (uint32_t i = 0; i < model->node_count; i++) {
+        model_node_t *node = &model->nodes[i];
+        update_joints(model, node, renderer, bd);
+    }
+#endif
 }
 
-static void get_node_matrix(model_t *model, model_node_t *model_node, mat4f_t *out)
+static void skinned_model_draw(skinned_model_t *model, 
+                               renderer_t *renderer, 
+                               shader_t *shader, 
+                               bulk_data_renderbuffer_t *buffers, 
+                               bulk_data_texture_t *textures)
 {
-    mat4f_t node_matrix = model_node->local_transform;
-    uint32_t current_parent = model_node->parent;
-    while (current_parent != UINT32_MAX)
-    {
-        model_node_t *parent_node = &model->nodes[current_parent];
-        mat4f_t temp = node_matrix;
-        mat4_multiply(&parent_node->local_transform, &temp, &node_matrix);
-        current_parent = parent_node->parent;
-    }
-    *out = node_matrix;
-}
+    renderer_bind_vertex_buffers(renderer, &model->vertex_buffer);
+    renderer_bind_index_buffers(renderer, &model->index_buffer);
 
-static void update_joints(model_t *model, vulkan_renderer_t *renderer)
-{
-    for (uint32_t i = 0; i < model->node_count; i++)
-    {
-        model_node_t *root = &model->nodes[i];
-        if (root->skin != UINT32_MAX)
-        {
-            mat4f_t local_transform = {0};
-            get_node_matrix(model, root, &local_transform);
+    for (uint32_t i = 0; i < model->node_count; i++) {
+        model_node_t *node = &model->nodes[i]; 
+        if (node->mesh != UINT32_MAX) {
+            mat4f_t node_matrix = {0};
+            get_node_matrix(model, node, &node_matrix);
+            update_joints(model, node, renderer, buffers);
 
-            mat4f_t inverse_transform = {0};
-            mat4_inverse(&local_transform, &inverse_transform);
-
-            skin_t *skin = &model->skins[root->skin];
-            uint32_t joint_count    = skin->joint_count;
-            mat4f_t *joint_matrices = memory_alloc(joint_count * sizeof(mat4f_t), MEM_TAG_TEMP);
-
-            for (uint32_t j = 0; j < joint_count; j++)
-            {
-                model_node_t *joint = &model->nodes[skin->joints[j]];
-
-                mat4f_t joint_mat = {0};
-                get_node_matrix(model, joint, &joint_mat);
-
-                mat4f_t temp = mat4_identity();
-                mat4_multiply(&joint_mat, &skin->inverse_bind_matrices[j], &temp);
-                mat4_multiply(&inverse_transform, &temp, &joint_matrices[j]);
-            }
-            memcpy(skin->ssbo.mapped, joint_matrices, joint_count * sizeof(mat4f_t));
-        }
-    }
-}
-
-static void load_meshes(gltf_model_t *gltf_model, model_t *model)
-{
-    model->mesh_count = gltf_model->mesh_count;
-    model->meshes = memory_alloc(model->mesh_count * sizeof(model->mesh_count), MEM_TAG_HEAP);
-    for (uint32_t i = 0; i < model->mesh_count; i++)
-    {
-        model->meshes[i].primitive_count = gltf_model->meshes[i].primitive_count;
-    }
-    //allocate vertex and index buffers
-    //calculate total buffer size and number of indices
-    uint32_t index_buffer_size  = 0;
-    size_t index_count          = 0;
-    uint32_t vertex_buffer_size = 0;
-    size_t vertex_count         = 0;
-
-    for (uint32_t i = 0; i < gltf_model->mesh_count; i++)
-    {
-        index_buffer_size += gltf_model->indices_byte_lengths[i];
-        index_count += gltf_model->index_counts[i];
-
-        vertex_buffer_size += gltf_model->vertices_byte_lengths[i];
-        vertex_count += gltf_model->vertex_counts[i];
-    }
-
-    //vertex and index buffers for ALL meshes in the entire models
-    uint8_t *vertex_buffer = memory_alloc(vertex_buffer_size, MEM_TAG_TEMP);
-    uint8_t *index_buffer  = memory_alloc(index_buffer_size, MEM_TAG_TEMP);
-    
-    index_count  = 0;
-    vertex_count = 0;
-
-    for (uint32_t i = 0; i < model->mesh_count; i++)
-    {
-        gltf_mesh_t *gltf_mesh = &gltf_model->meshes[i];
-        mesh_t *mesh = &model->meshes[i];
-
-        for (uint32_t j = 0; j < mesh->primitive_count; j++)
-        {
-            gltf_mesh_primitive_t *gltf_primitive = &gltf_mesh->primitives[j];
-            primitive_t *primitive = &mesh->primitives[j];
-
-            uint32_t first_index      = index_count;
-            uint32_t vertex_start     = vertex_count;
-            uint32_t prim_index_count = 0;
-            bool has_skin = false;
-
-            {
-                const float *position_buffer         = NULL;
-                const float *normals_buffer          = NULL;
-                const float *tex_coords_buffer       = NULL;
-                const uint16_t *joint_indices_buffer = NULL;
-                const float *joint_weights_buffer    = NULL;
-                uint32_t prim_vertex_count           = 0; 
-                if (gltf_primitive->position != UINT32_MAX)
-                {
-                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->position];
-                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                    position_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
-                    prim_vertex_count = accessor->count;
-                }
-
-                if (gltf_primitive->normal != UINT32_MAX)
-                {
-                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->normal];
-                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                    normals_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
-                }
-
-                if (gltf_primitive->tex_coord != UINT32_MAX)
-                {
-                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->tex_coord];
-                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                    tex_coords_buffer = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
-                }
-
-                if (gltf_primitive->joints != UINT32_MAX)
-                {
-                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->joints];
-                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                    joint_indices_buffer = (const uint16_t *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
-                }
-
-                if (gltf_primitive->weights != UINT32_MAX)
-                {
-                    gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->joints];
-                    gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                    joint_weights_buffer      = (const float *)(&gltf_model->buffers[bv->buffer].data[accessor->byte_offset + bv->byte_offset]);
-                }
-
-                has_skin = (joint_indices_buffer && joint_weights_buffer);
-
-                for (uint32_t v = 0; v < prim_vertex_count; v++)
-                {
-                    skinned_vertex_t *vert = &vertex_buffer[vertex_count++];
-                    //positions
-                    vert->pos    = (vec3f_t){position_buffer[v * 3], position_buffer[v * 3 + 1], position_buffer[v * 3 + 2]};
-                    //normals
-                    vec3f_t normal = {0};
-                    if (normals_buffer)
-                    {
-                        normal = vec3_normalize((vec3f_t){normals_buffer[v * 3], normals_buffer[v * 3 + 1], normals_buffer[v * 3 + 2]});
-                    }
-                    vert->normal =  normal;
-                    //tex coords
-                    vec2f_t tex_coords = {0};
-                    if (tex_coords_buffer)
-                    {
-                        tex_coords = vec2_normalize((vec2f_t){tex_coords_buffer[v * 2], tex_coords_buffer[v * 2 + 1]});
-                    }
-                    vert->uv = tex_coords;
-                    //joint indices
-                    vec4i_t joint_indices = {0};
-                    if (has_skin)
-                    {
-                        joint_indices = (vec4i_t){joint_indices_buffer[v * 4], joint_indices_buffer[v * 4 + 1], joint_indices_buffer[v * 4 + 2], joint_indices_buffer[v * 4 +3]};
-                    }
-                    vert->joint_indices = joint_indices;
-                    //joint weights
-                    vec4f_t joint_weights = {0};
-                    if (has_skin)
-                    {
-                        joint_weights = (vec4f_t){joint_weights_buffer[v * 4], joint_weights_buffer[v * 4 + 1], joint_weights_buffer[v * 4 + 2], joint_weights_buffer[v * 4 + 3]};
-                    }
-                    vert->joint_weights = joint_weights;
-                }
-            }
-
-            //indices
-            {
-                gltf_accessor_t *accessor = &gltf_model->accessors[gltf_primitive->indices];
-                gltf_buffer_view_t *bv    = &gltf_model->buffer_views[accessor->buffer_view];
-                gltf_buffer_t *buffer     = &gltf_model->buffers[bv->buffer];
-                
-                prim_index_count = accessor->count;
-                
-                switch (accessor->component_type)
-                {
-                    case UNSIGNED_BYTE:
-                    {
-                        const uint8_t *buf = (const uint8_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
-                            index_buffer[prim_index_count++] = buf[index] + vertex_start;
-                        }
-                        break;
-                    }
-
-                    case UNSIGNED_SHORT:
-                    {
-                        const uint16_t *buf = (const uint16_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
-                            index_buffer[prim_index_count++] = buf[index] + vertex_start;
-                        }
-                        break;
-                    }
-
-                    case UNSIGNED_INT:
-                    {
-                        const uint32_t *buf = (const uint32_t *)(&buffer->data[accessor->byte_offset + bv->byte_offset]);
-                        for (uint32_t index = 0; index < accessor->count; index++)
-                        {
-                            index_buffer[prim_index_count++] = buf[index] + vertex_start;
-                        }
-                        break;
-                    }
-                    default:
-                        assert(false);
-                        break;
-                }
-            }
-
-            primitive->first_index = index_count;
-            primitive->index_count = prim_index_count;
-            primitive->material    = gltf_primitive->material;
+            renderer_push_constants(renderer, shader, &node_matrix, sizeof(mat4f_t), 0, SHADER_STAGE_VERTEX);
+            renderer_shader_bind_resource(renderer, SHADER_TYPE_SKINNED_GEOMETRY, RENDER_DATA_SKINNED_MODEL, model->rendering_data);
+            renderer_draw_indexed(renderer, 0, model->mesh.first_index, model->mesh.index_count, 0, 1);
         }
     }
 }
 
 static void setup(game_t *game)
 {
-    //create fps entity
-    gltf_model_t *gltf_model = model_load_from_gltf("./assets/models/cesium_man/cesium_man.gltf");
-
-    model_t model;
-    //we have the input, now load images
-    model_load_textures(gltf_model, &model, &game->asset_store, &game->renderer);
-    model_load_materials(gltf_model, &model);
-    load_nodes(gltf_model, &model);
-    load_skins(gltf_model, &model, &game->renderer);
-    load_animations(gltf_model, &model);
-    update_joints(&model, &game->renderer);
-    load_meshes(gltf_model, &model);
-    //do index and vertex buffers
+    //add all the resources
+    asset_store_add_skinned_model(&game->asset_store, 
+                                  &game->renderer, 
+                                  "cesium-man", 
+                                  "./assets/models/cesium_man/cesium_man.gltf",
+                                  &game->bulk_data.renderbuffers);
     
+    uint32_t index = asset_store_get_asset_index(&game->asset_store, "cesium-man", ASSET_TYPE_SKINNED_MODEL);
+    game->skinned_model_index = index;
+    
+    skinned_model_t *model = asset_store_get_asset_ptr_null(&game->asset_store, "cesium-man", ASSET_TYPE_SKINNED_MODEL);
+    skinned_model_update_animation(model, &game->renderer, &game->bulk_data.renderbuffers, DELTA_TIME);
+
+    //renderer fetch shader resources
+    shader_resource_list_t resources = {0};
+    resources.globals_data     = game->renderer.uniform_buffer_render_data;
+    resources.instance_count   = 1;
+    resources.instance_data = memory_alloc(sizeof(void*) * resources.instance_count, MEM_TAG_TEMP);
+    resources.instance_data[0] = model->rendering_data;
+
+    renderer_initialize_shader(&game->renderer, SHADER_TYPE_SKINNED_GEOMETRY, &resources);
+
+    //init camera
+    game->renderer.camera.position = (vec3f_t){0.0f, 0.5f, 2.0f};
+    game->renderer.camera.front    = (vec3f_t){0.0f, 0.0f, -1.0f};
+    game->renderer.camera.up       = (vec3f_t){0.0f, 1.0f, 0.0f};
+    game->renderer.camera.fov      = PI / 2.0f;
+    game->renderer.camera.yaw      = 0.0f;
+    game->renderer.camera.pitch    = 0.0f;
+    game->renderer.camera.zfar     = 256.0f;
+    game->renderer.camera.znear    = 0.1f;
+    game->renderer.camera.aspect   = (float)game->window_width / (float)game->window_height;
+
     game->performance_freq = SDL_GetPerformanceFrequency();
     game->previous_counter = SDL_GetPerformanceCounter();
-
-    game->camera.size.x = game->window_width + game->tile_width;
-    game->camera.size.y = game->window_height + game->tile_width;
-
-    game->camera.min.x = 0;
-    game->camera.min.y = 0;
-    if (game->player_entity)
-    {
-        game->camera.min.x  = game->player_entity->p.x + game->player_entity->size.x / 2 - game->window_width / 2;
-        game->camera.min.y  = game->player_entity->p.y + game->player_entity->size.y / 2 - game->window_height / 2;
-    }
 }
 
 static void update(game_t *game)
 {
     //if quit was requested, quit now
-    if (game->input.quit)
-    {
+    if (game->input.quit) {
         game->is_running = false;
         return;
     }
@@ -506,85 +164,110 @@ static void update(game_t *game)
     
     double sec = (double)elapsed / game->performance_freq;
     game->accumulator += sec;
-
-    while (game->accumulator > 1.0 / 61.0)
-    {
+#if 1
+    while (game->accumulator > 1.0 / 61.0) {
+#endif
         memory_begin(MEM_TAG_SIM);
 
+        skinned_model_t *model = bulk_data_getp_null_skinned_model_t(&game->bulk_data.skinned_models, game->skinned_model_index);
+        skinned_model_update_animation(model, &game->renderer, &game->bulk_data.renderbuffers, DELTA_TIME);
         //update all entities
-        for (uint32_t i = 0; i < bulk_data_size(&game->entities); i++)
-        {
-            entity_t *e = bulk_data_getp_null(&game->entities, i);
-            if (e)
-            {
+        for (uint32_t i = 0; i < game->bulk_data.entities.count; i++) {
+
+            entity_t *e = bulk_data_getp_null_entity_t(&game->bulk_data.entities, i);
+
+            if (e) {
+
                 switch (e->type)
                 {
                     case(ENTITY_TYPE_PLAYER):
-                    {
-                        update_player(e, &game->input, DELTA_TIME, &game->entities);
+                        update_player(e, &game->input, DELTA_TIME, &game->bulk_data.entities);
                         break;
-                    }
                     case(ENTITY_TYPE_WEAPON):
-                    {
                         e->p = game->player_entity->p;
                         break;
-                    }
                     case(ENTITY_TYPE_WIDGET):
-                    {
                         update_widget(e, 1.0/60.0, sec);
                         break;
-                    }
                     default: 
                         break;
                 }
             }
         }
 
-        //add some text to render
-
-        game->camera.min.x = 0;
-        game->camera.min.y = 0;
-        if (game->player_entity)
-        {
-            game->camera.min.x  = game->player_entity->p.x + game->player_entity->size.x / 2 - game->window_width / 2;
-            game->camera.min.y  = game->player_entity->p.y + game->player_entity->size.y / 2 - game->window_height / 2;
-        }
-
         game->accumulator -= 1.0 / 59.0;
         if (game->accumulator < 0) game->accumulator = 0.0;
+#if 1
     }
+#endif
 }
-
 
 static void render(game_t *game)
 {
-    vulkan_renderer_render(&game->renderer, game);
+    //we'll come back to this
+    renderer_frame_prepare(&game->renderer, NULL); 
+
+    //prepare all resources to render i.e. update uniform buffers
+    scene_uniform_data_t scene_uniforms = {0};
+    scene_uniforms.light_pos = (vec4f_t){3.0f, 3.0f, 3.0f, 1.0f};
+    camera_get_projection(&game->renderer.camera, &scene_uniforms.projection);
+    scene_uniforms.projection.m[1][1] *= -1;
+    camera_get_view_matrix(&game->renderer.camera, &scene_uniforms.view);
+    renderbuffer_t *scene_uniform_buffer = bulk_data_getp_null_renderbuffer_t(&game->bulk_data.renderbuffers, game->renderer.uniform_buffer_index);
+    renderer_copy_to_renderbuffer(&game->renderer, 
+                                  scene_uniform_buffer, 
+                                  &scene_uniforms, 
+                                  sizeof(scene_uniforms));
+
+    //begin rendering
+    renderer_begin_rendering(&game->renderer);
+    //use shader
+    renderer_use_shader(&game->renderer, SHADER_TYPE_SKINNED_GEOMETRY);    
+
+    //set viewport,scissor
+    renderer_set_viewport(&game->renderer, game->window_width, game->window_height, 0.0f, 1.0f);
+    renderer_set_scissor(&game->renderer, 0, 0, game->window_width, game->window_height);
+
+    //bind resources to render
+    //bind scene uniforms
+    renderer_shader_bind_resource(&game->renderer, SHADER_TYPE_SKINNED_GEOMETRY, RENDER_DATA_SCENE_UNIFORMS, game->renderer.uniform_buffer_render_data);
+
+    //draw calls
+    //...
+    skinned_model_t *model = bulk_data_getp_null_skinned_model_t(&game->bulk_data.skinned_models, game->skinned_model_index);
+    skinned_model_draw(model, 
+                       &game->renderer, 
+                       &game->renderer.shaders[SHADER_TYPE_SKINNED_GEOMETRY], 
+                       &game->bulk_data.renderbuffers, 
+                       &game->bulk_data.textures);
+
+    renderer_end_rendering(&game->renderer);
+    renderer_frame_submit(&game->renderer, NULL); 
 }
 
 void game_run(game_t *game)
 {
     setup(game);
-    while(game->is_running)
-    {
+    while(game->is_running) {
         process_input(&game->input);
         update(game);
         render(game);
     }
+
     memory_uninit();
 }
 
 void game_init(game_t *game)
 {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0)
-    {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         LOGE("initializing SDL %s", SDL_GetError());
         return;
     }
 
-#if defined (DEBUG)
-    game->window_width = 1920;
-    game->window_height = 1080;
-    uint32_t flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN | SDL_WINDOW_BORDERLESS;
+#if defined (DEBUG) 
+    game->window_width = 1280;
+    game->window_height = 720;
+    uint32_t flags = SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN;
 #else
     SDL_DisplayMode dm = {};
     SDL_GetCurrentDisplayMode(0, &dm);
@@ -604,23 +287,35 @@ void game_init(game_t *game)
     assert(game->window);
 
     game->is_running = false;
-    game->tile_width = (float)game->window_width / (float)TILE_COUNT_X;
 
     srand(time(NULL));
     memory_init();
 
-    asset_store_init(&game->asset_store);
-    vulkan_renderer_init(&game->renderer, game->window, game->tile_width, game->tile_width);
+    bulk_data_init_entity_t(&game->bulk_data.entities);
+    bulk_data_init_tile_t(&game->bulk_data.tiles);
+    bulk_data_init_weapon_t(&game->bulk_data.weapons);
+    bulk_data_init_widget_t(&game->bulk_data.widgets);
+    bulk_data_init_renderbuffer_t(&game->bulk_data.renderbuffers);
+    bulk_data_init_texture_t(&game->bulk_data.textures);
+    bulk_data_init_skinned_model_t(&game->bulk_data.skinned_models);
 
+    asset_store_init(&game->asset_store, &game->bulk_data.textures, &game->bulk_data.skinned_models);
+
+    memset(&game->renderer, 0, sizeof(game->renderer));
+
+    renderer_config_t renderer_config = {0};
+#if defined (DEBUG)
+    renderer_config.flags |= RENDERER_CONFIG_FLAG_ENABLE_VALIDATION;
+#endif
+
+    window_t window = {0};
+    window.window = game->window;
+    window.width = 0;
+    window.height = 0;
+
+    renderer_initialize(&game->renderer, &window, renderer_config);
+    renderer_create_shader(&game->renderer, &game->bulk_data.renderbuffers, SHADER_TYPE_SKINNED_GEOMETRY);
     game->entity_id = 0;
-
-    bulk_data_init(&game->entities, entity_t);
-    bulk_data_init(&game->tiles, tile_t);
-    bulk_data_init(&game->weapons, weapon_t);
-    bulk_data_init(&game->animation_chunks, animation_chunk_t);
-    bulk_data_init(&game->sprites, sprite_t);
-    bulk_data_init(&game->widgets, widget_t);
-    bulk_data_init(&game->text_labels, text_label_t);
 
     game->is_running = true;
 }

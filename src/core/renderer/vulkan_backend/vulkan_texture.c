@@ -1,10 +1,10 @@
 #include "vulkan_texture.h"
-#include "vulkan_renderer.h"
+#include "vulkan_backend.h"
 #include "vulkan_buffer.h"
 #include "vulkan_common.h"
 
-#include "../memory/memory.h"
-#include "../logger/logger.h"
+#include "../../memory/memory.h"
+#include "../../logger/logger.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>
@@ -60,16 +60,13 @@ static void transition_image_layout(VkDevice device,
     VkPipelineStageFlags destinationStage = 0;
 
     if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && 
-        new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-    {
+        new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    }
-    else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
-             new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-    {
+    } else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {       
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -85,38 +82,6 @@ static void transition_image_layout(VkDevice device,
                          1, &barrier);
 
     end_command_buffer(&commandBuffer, device, pool, queue); 
-}
-
-static void create_descriptor_sets(vulkan_texture_t *tex, vulkan_renderer_t *renderer)
-{
-    VkDescriptorSetLayout layouts[MAX_FRAMES_IN_FLIGHT] = {renderer->descriptor_set_layout, renderer->descriptor_set_layout};
-    VkDescriptorSetAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = renderer->descriptor_pool;
-    allocInfo.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
-    allocInfo.pSetLayouts = layouts;
-    
-    VK_CHECK(vkAllocateDescriptorSets(renderer->logical_device, &allocInfo, tex->descriptor_sets));
-
-    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-    {
-        VkDescriptorImageInfo imageInfos;
-        imageInfos.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imageInfos.imageView = tex->view;
-        imageInfos.sampler   = tex->sampler;
-
-        VkWriteDescriptorSet descriptorWrites[1];
-        memset(descriptorWrites, 0, sizeof(descriptorWrites));
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = tex->descriptor_sets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pImageInfo = &imageInfos;
-
-        vkUpdateDescriptorSets(renderer->logical_device, 1, descriptorWrites, 0, NULL);
-    }
 }
 
 static void create_image(vulkan_texture_t *texture,
@@ -156,7 +121,7 @@ static void create_image(vulkan_texture_t *texture,
 }
 
 void vulkan_texture_from_buffer(vulkan_texture_t *texture, 
-                                vulkan_renderer_t *renderer, 
+                                vulkan_context_t *context, 
                                 void *pixels, 
                                 uint32_t w, 
                                 uint32_t h, 
@@ -169,28 +134,25 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     texture->h = h;
     texture->mip_levels = mip_levels;
 
-    VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+    VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
     
     vulkan_buffer_t staging_buffer;
     create_vulkan_buffer(&staging_buffer,
-                         renderer, 
-                         image_size, 
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | 
-                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                          context, 
+                          image_size, 
+                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | 
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     void *data;
-    vkMapMemory(renderer->logical_device, staging_buffer.memory, 0, image_size, 0, &data);
-#if 1
-    if (num_comp == 1)
-    {
+    vkMapMemory(context->logical_device, staging_buffer.memory, 0, image_size, 0, &data);
+
+    if (num_comp == 1) {
         uint8_t *dst_pixels = (uint8_t*)data;
         uint8_t *src_pixels = (uint8_t*)pixels;
 
-        for (uint32_t row = 0; row < h; row++)
-        {
-            for (uint32_t col = 0; col < w; col++)
-            {
+        for (uint32_t row = 0; row < h; row++) {
+            for (uint32_t col = 0; col < w; col++) {
                 uint8_t red = *src_pixels++;
                 *dst_pixels++ = red;
                 *dst_pixels++ = red;
@@ -198,31 +160,23 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
                 *dst_pixels++ = red ? 0xFF : 0;
             }
         }
-    }
-    else if (num_comp == 3)
-    {
+    } else if (num_comp == 3) {
         uint8_t *dst_pixels = (uint8_t*)data;
         uint8_t *src_pixels = (uint8_t*)pixels;
 
-        for (uint32_t row = 0; row < h; row++)
-        {
-            for (uint32_t col = 0; col < w; col++)
-            {
+        for (uint32_t row = 0; row < h; row++) {
+            for (uint32_t col = 0; col < w; col++) {
                 *dst_pixels++ = *src_pixels++;
                 *dst_pixels++ = *src_pixels++;
                 *dst_pixels++ = *src_pixels++;
                 *dst_pixels++ = 0xFF;
             }
         }
-    }
-    else
-    {
-#endif
+    } else {
         memcpy(data, pixels, image_size);
-#if 1
     }
-#endif  
-    vkUnmapMemory(renderer->logical_device, staging_buffer.memory);
+
+    vkUnmapMemory(context->logical_device, staging_buffer.memory);
 
     VkBufferImageCopy region = {};
     region.bufferOffset = 0;
@@ -236,41 +190,43 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     region.imageExtent = (VkExtent3D){w,h,1};
     
     create_image(texture,
-                 renderer->logical_device,
+                 context->logical_device,
                  format, 
                  VK_IMAGE_TILING_OPTIMAL, 
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                 &renderer->device_memory_properties, 
+                 &context->memory_properties, 
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     
-    transition_image_layout(renderer->logical_device,
-                          renderer->command_pool,
-                          renderer->graphics_queue,
-                          texture->image,
-                          format,
-                          VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          texture->mip_levels);
+    transition_image_layout(context->logical_device,
+                            context->graphics_command_pool,
+                            context->graphics_queue,
+                            texture->image,
+                            format,
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            texture->mip_levels);
     
-    copy_buffer_to_image(renderer->logical_device,
-                      renderer->command_pool,
-                      renderer->graphics_queue,
-                      staging_buffer.buffer,
-                      texture->image,
-                      w,h, &region, 1);
+    copy_buffer_to_image(context->logical_device,
+                         context->graphics_command_pool,
+                         context->graphics_queue,
+                         staging_buffer.buffer,
+                         texture->image,
+                         w, h, &region, 1);
 
-    transition_image_layout(renderer->logical_device,
-                          renderer->command_pool,
-                          renderer->graphics_queue,
-                          texture->image,
-                          format,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                          texture->mip_levels);
+    transition_image_layout(context->logical_device,
+                            context->graphics_command_pool,
+                            context->graphics_queue,
+                            texture->image,
+                            format,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            texture->mip_levels);
 
-    vkDestroyBuffer(renderer->logical_device, staging_buffer.buffer,NULL);
-    vkFreeMemory(renderer->logical_device, staging_buffer.memory, NULL);
+    vkDestroyBuffer(context->logical_device, staging_buffer.buffer,NULL);
+    vkFreeMemory(context->logical_device, staging_buffer.memory, NULL);
 
+    texture->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    
     VkImageViewCreateInfo viewInfo = {};
     viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image    = texture->image;
@@ -282,7 +238,7 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
 
-    VK_CHECK(vkCreateImageView(renderer->logical_device, &viewInfo, NULL, &texture->view));
+    VK_CHECK(vkCreateImageView(context->logical_device, &viewInfo, NULL, &texture->view));
 
     VkSamplerCreateInfo samplerInfo = {};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -292,36 +248,30 @@ void vulkan_texture_from_buffer(vulkan_texture_t *texture,
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = renderer->device_properties.limits.maxSamplerAnisotropy;
+    samplerInfo.maxAnisotropy = context->properties.limits.maxSamplerAnisotropy;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    VK_CHECK(vkCreateSampler(renderer->logical_device, &samplerInfo, NULL, &texture->sampler));
+    VK_CHECK(vkCreateSampler(context->logical_device, &samplerInfo, NULL, &texture->sampler));
 }
 
-
-bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path)
+bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_context_t *context, const char *file_path)
 {
     int w,h,channels;
     stbi_uc *pixels = stbi_load(file_path, &w, &h, &channels, 0);
-    if (!pixels)
-    {
+    if (!pixels) {
         LOGE("Failed to load image");
         return false;
     }
 
-    //uint32_t mip_levels = (uint32_t)floorf(log2f((float)MAX(w,h)));
-
-    vulkan_texture_from_buffer(texture,renderer, pixels, w, h, channels, 1);
+    vulkan_texture_from_buffer(texture, context, pixels, w, h, channels, 1);
     stbi_image_free(pixels);
-    create_descriptor_sets(texture, renderer);
-    return true;
+    return true; 
 }
 
-
-bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *renderer, const char *file_path)
+bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_context_t *context, const char *file_path)
 {
     ktxTexture *ktx_texture;
     ktxResult result = ktxTexture_CreateFromNamedFile(file_path, KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktx_texture);
@@ -337,21 +287,20 @@ bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *
     VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
     vulkan_buffer_t staging_buffer;
     create_vulkan_buffer(&staging_buffer, 
-                         renderer, 
+                         context, 
                          ktx_texture_size,
                          VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     void *data;
-    vkMapMemory(renderer->logical_device, staging_buffer.memory, 0, ktx_texture_size, 0, (void**)&data);
+    vkMapMemory(context->logical_device, staging_buffer.memory, 0, ktx_texture_size, 0, (void**)&data);
     memcpy(data, ktx_texture_data, ktx_texture_size);
-    vkUnmapMemory(renderer->logical_device, staging_buffer.memory);
+    vkUnmapMemory(context->logical_device, staging_buffer.memory);
 
     //max texture size 4096 * 4096 => 12 mip levels
     VkBufferImageCopy *buffer_copy_regions = memory_alloc(sizeof(VkBufferImageCopy) * texture->mip_levels, MEM_TAG_TEMP);
     uint32_t buffer_copy_region_count = 0;
-    for (uint32_t i = 0; i < texture->mip_levels; i++)
-    {
+    for (uint32_t i = 0; i < texture->mip_levels; i++) {
         ktx_size_t offset;
         KTX_error_code result = ktxTexture_GetImageOffset(ktx_texture, i, 0, 0, &offset);
         assert(result == KTX_SUCCESS);
@@ -368,43 +317,45 @@ bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *
     }
 
     create_image(texture,
-                 renderer->logical_device,
+                 context->logical_device,
                  format, 
                  VK_IMAGE_TILING_OPTIMAL, 
                  VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                 &renderer->device_memory_properties, 
+                 &context->memory_properties, 
                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    transition_image_layout(renderer->logical_device,
-                          renderer->command_pool,
-                          renderer->graphics_queue,
-                          texture->image,
-                          format,
-                          VK_IMAGE_LAYOUT_UNDEFINED,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          texture->mip_levels);
-    copy_buffer_to_image(renderer->logical_device,
-                      renderer->command_pool,
-                      renderer->graphics_queue,
-                      staging_buffer.buffer,
-                      texture->image,
-                      texture->w,
-                      texture->h,
-                      buffer_copy_regions,
-                      buffer_copy_region_count);
+    transition_image_layout(context->logical_device,
+                            context->graphics_command_pool,
+                            context->graphics_queue,
+                            texture->image,
+                            format,
+                            VK_IMAGE_LAYOUT_UNDEFINED,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            texture->mip_levels);
+    copy_buffer_to_image(context->logical_device,
+                         context->graphics_command_pool,
+                         context->graphics_queue,
+                         staging_buffer.buffer,
+                         texture->image,
+                         texture->w,
+                         texture->h,
+                         buffer_copy_regions,
+                         buffer_copy_region_count);
 
-    transition_image_layout(renderer->logical_device,
-                           renderer->command_pool,
-                           renderer->graphics_queue,
-                           texture->image,
-                           format,
-                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                           texture->mip_levels);
+    transition_image_layout(context->logical_device,
+                            context->graphics_command_pool,
+                            context->graphics_queue,
+                            texture->image,
+                            format,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                            texture->mip_levels);
     
-    vkDestroyBuffer(renderer->logical_device, staging_buffer.buffer,NULL);
-    vkFreeMemory(renderer->logical_device, staging_buffer.memory, NULL);
+    vkDestroyBuffer(context->logical_device, staging_buffer.buffer,NULL);
+    vkFreeMemory(context->logical_device, staging_buffer.memory, NULL);
 
     ktxTexture_Destroy(ktx_texture);
+
+    texture->layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     VkImageViewCreateInfo viewInfo = {};
     viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -417,7 +368,7 @@ bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
 
-    VK_CHECK(vkCreateImageView(renderer->logical_device, &viewInfo, NULL, &texture->view));
+    VK_CHECK(vkCreateImageView(context->logical_device, &viewInfo, NULL, &texture->view));
 
     VkSamplerCreateInfo samplerInfo = {};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -427,15 +378,13 @@ bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_renderer_t *
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.anisotropyEnable = VK_TRUE;
-    samplerInfo.maxAnisotropy = renderer->device_properties.limits.maxSamplerAnisotropy;
+    samplerInfo.maxAnisotropy = context->properties.limits.maxSamplerAnisotropy;
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    VK_CHECK(vkCreateSampler(renderer->logical_device, &samplerInfo, NULL, &texture->sampler));
-
-    create_descriptor_sets(texture, renderer);
+    VK_CHECK(vkCreateSampler(context->logical_device, &samplerInfo, NULL, &texture->sampler));
     
     return true;
 }

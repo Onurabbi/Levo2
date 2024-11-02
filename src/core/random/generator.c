@@ -64,8 +64,7 @@ static inline uint8_t grid_get_tile(grid_t *grid, int32_t row, int32_t col)
 
 static inline void grid_set_region(grid_t *grid, int32_t row, int32_t col, uint8_t val)
 {
-    if (row < 0 || row >= grid->height || col < 0 || col >= grid->width)
-    {
+    if (row < 0 || row >= grid->height || col < 0 || col >= grid->width) {
         assert(false && "out of bounds grid_set");
     }
     grid->data[grid->width * row + col].region = val;
@@ -73,8 +72,7 @@ static inline void grid_set_region(grid_t *grid, int32_t row, int32_t col, uint8
 
 static inline void grid_set_tile(grid_t *grid, int32_t row, int32_t col, uint8_t val)
 {
-    if (row < 0 || row >= grid->height || col < 0 || col >= grid->width)
-    {
+    if (row < 0 || row >= grid->height || col < 0 || col >= grid->width) {
         assert(false && "out of bounds grid_set");
     }
     grid->data[grid->width * row + col].tile = val;
@@ -82,8 +80,7 @@ static inline void grid_set_tile(grid_t *grid, int32_t row, int32_t col, uint8_t
 
 static inline void grid_set(grid_t *grid, int32_t row, int32_t col, grid_tile_t val)
 {
-    if (row < 0 || row >= grid->height || col < 0 || col >= grid->width)
-    {
+    if (row < 0 || row >= grid->height || col < 0 || col >= grid->width) {
         assert(false && "out of bounds grid_set");
     }
     grid->data[grid->width * row + col] = val;
@@ -97,10 +94,8 @@ static inline void grid_init(grid_t *grid, int32_t width, int32_t height)
     grid->region_count = 0;
 
     grid->data = memory_alloc(sizeof(grid_tile_t) * grid->width * grid->height, MEM_TAG_TEMP);//already memset'd
-    for (uint32_t row = 0; row < grid->height; row++)
-    {
-        for (uint32_t col = 0; col < grid->width; col++)
-        {
+    for (uint32_t row = 0; row < grid->height; row++) {
+        for (uint32_t col = 0; col < grid->width; col++) {
             grid_set_tile(grid, row, col, WALL);
             grid_set_region(grid, row, col, 0);
         }
@@ -117,8 +112,7 @@ static bool can_carve(grid_t *grid, vec2i_t p, vec2i_t dir)
     if (x1 < 0 || x1 >= GRID_SIZE ||
         x2 < 0 || x2 >= GRID_SIZE ||
         y1 < 0 || y1 >= GRID_SIZE ||
-        y2 < 0 || y2 >= GRID_SIZE)
-    {
+        y2 < 0 || y2 >= GRID_SIZE) {
         return false;
     }
 
@@ -138,22 +132,19 @@ static void grow_maze(grid_t *grid, int32_t x, int32_t y)
     vec2i_t start = (vec2i_t){x,y};
     queue[queue_count++] = start;
 
-    while(queue_count > 0)
-    {
+    while(queue_count > 0) {
         vec2i_t current = queue[queue_count - 1];
 
         vec2i_t directions[4];
         uint32_t direction_count = 0;
 
-        for (uint32_t i = 0; i < sizeof(cardinal)/sizeof(cardinal[0]); i++)
-        {
-            if (can_carve(grid, current, cardinal[i]))
-            {
+        for (uint32_t i = 0; i < sizeof(cardinal)/sizeof(cardinal[0]); i++) {
+            if (can_carve(grid, current, cardinal[i])) {
                directions[direction_count++] = cardinal[i];
             }
         }
-        if (direction_count > 0)
-        {
+
+        if (direction_count > 0) {
             assert(queue_count < QUEUE_CAP);
 
             int32_t dir_index = rand() % direction_count;
@@ -163,9 +154,7 @@ static void grow_maze(grid_t *grid, int32_t x, int32_t y)
             grid_set(grid, current.y + dir.y * 2, current.x + dir.x * 2, (grid_tile_t){FLOOR, grid->region_count});
             
             queue[queue_count++] = (vec2i_t){current.x + dir.x * 2, current.y + dir.y * 2};
-        }
-        else
-        {
+        } else {
             queue_count--;
         }
     }
@@ -173,15 +162,11 @@ static void grow_maze(grid_t *grid, int32_t x, int32_t y)
 
 static region_connector_t *append_connector_to_tail(region_connector_t *head, region_connector_t *node)
 {
-    if (!head)
-    {
+    if (!head) {
         head = node;
-    }
-    else
-    {
+    } else {
         region_connector_t *p = head;
-        while(p->next)
-        {
+        while(p->next) {
             p = p->next;
         }
         p->next = node;
@@ -195,14 +180,12 @@ static bool delete_connector(region_connector_t **head, uint8_t region)
     region_connector_t *temp = *head;
     region_connector_t *prev = NULL;
 
-    if (temp && temp->region == region)
-    {
+    if (temp && temp->region == region) {
         *head = temp->next;
         return true;
     }
 
-    while (temp && temp->region != region)
-    {
+    while (temp && temp->region != region) {
         prev = temp;
         temp = temp->next;
     }
@@ -216,38 +199,29 @@ static bool delete_connector(region_connector_t **head, uint8_t region)
 static void connect_regions(grid_t *grid)
 {
     region_connector_t ** region_connectors = memory_alloc(grid->region_count * sizeof(region_connector_t*), MEM_TAG_TEMP); //array of linked lists
-    for (uint32_t i = 0; i < grid->region_count; i++)
-    {
+    for (uint32_t i = 0; i < grid->region_count; i++) {
         region_connectors[i] = NULL;
     }
 
-    for (uint32_t row = 1; row < grid->height - 1; row++)
-    {
-        for (uint32_t col = 1; col < grid->width - 1; col++)
-        {
+    for (uint32_t row = 1; row < grid->height - 1; row++) {
+        for (uint32_t col = 1; col < grid->width - 1; col++) {
             if (grid_get_tile(grid, row, col) == WALL)
             {
                 uint8_t from = 0; //index into the region_connectors array
                 uint8_t to   = 0; //region field in region_connector_t struct
 
-                for (uint32_t i = 0; i < 4; i++)
-                {
+                for (uint32_t i = 0; i < 4; i++) {
                     uint8_t region = grid_get_region(grid, row + cardinal[i].y, col + cardinal[i].x);
                     uint8_t tile   = grid_get_tile(grid, row + cardinal[i].y, col + cardinal[i].x);
-                    if (tile == FLOOR &&  region != 0)
-                    {
-                        if (from == 0)
-                        {
+                    if (tile == FLOOR &&  region != 0) {
+                        if (from == 0) {
                             from = region;
-                        }
-                        else if (to == 0 && region != from )
-                        {
+                        } else if (to == 0 && region != from ){
                             to = region;
                         }
                     }
 
-                    if (from && to)
-                    {
+                    if (from && to) {
                         //create two nodes, add one to 'from' list, one to 'to' list
                         region_connector_t *conn_from = memory_alloc(sizeof(region_connector_t), MEM_TAG_TEMP);
                         conn_from->next = NULL;
@@ -269,11 +243,9 @@ static void connect_regions(grid_t *grid)
 
     //now we have linked lists for each room. 
     //Once a connector has been found, print the connection and remove all other connections between these two rooms
-    for (uint32_t i = 0; i < grid->region_count; i++)
-    {
+    for (uint32_t i = 0; i < grid->region_count; i++) {
         region_connector_t *head = region_connectors[i];
-        while (head)
-        {
+        while (head) {
             uint8_t to   = head->region;
             uint8_t from = (uint8_t)(i + 1);
 
@@ -293,14 +265,11 @@ void remove_dead_ends(grid_t *grid)
 {
     bool done = false;
 
-    while(!done)
-    {
+    while(!done) {
         done = true;
 
-        for (uint32_t row = 1; row < grid->height - 1; row++)
-        {
-            for (uint32_t col = 1; col < grid->width - 1; col++)
-            {
+        for (uint32_t row = 1; row < grid->height - 1; row++) {
+            for (uint32_t col = 1; col < grid->width - 1; col++) {
                 if (grid_get_tile(grid, row,col) == WALL) continue;
                 
                 uint32_t exits = 0;
@@ -338,17 +307,14 @@ void create_dungeon(void)
     first_room->size.x = 11;
     first_room->size.y = 11;
 
-    for (uint32_t row = 1; row < 12; row++)
-    {
-        for (uint32_t col = 1; col < 12; col++)
-        {
+    for (uint32_t row = 1; row < 12; row++) {
+        for (uint32_t col = 1; col < 12; col++) {
             grid_set_tile(&grid, row, col, FLOOR);
             grid_set_region(&grid, row,col,grid.region_count);
         }
     }
 
-    for (uint32_t i = 0; i < max_tries; i++)
-    {
+    for (uint32_t i = 0; i < max_tries; i++) {
         //room size needs to be odd according to bob nystrom:
         //https://github.com/munificent/hauberk/blob/db360d9efa714efb6d937c31953ef849c7394a39/lib/src/content/dungeon.dart
         int width = (int)rng_in_range(9.0f, 18.0f);
@@ -365,15 +331,14 @@ void create_dungeon(void)
 
         rect_t room = (rect_t){{x,y},{width, height}};
         bool collided = false;
-        for (uint32_t j = 0; j < room_count; j++)
-        {
+        for (uint32_t j = 0; j < room_count; j++) {
             rect_t other = rooms[j];
-            if (rect_vs_rect(room, other))
-            {
+            if (rect_vs_rect(room, other)) {
                 collided = true;
                 break;
             }
         }
+
         if (collided) continue;
 
         //we were able to place the room;
@@ -381,10 +346,8 @@ void create_dungeon(void)
         //new room means new region
         grid.region_count++;
 
-        for (uint32_t row = y; row < y + height; row++)
-        {
-            for (uint32_t col = x; col < x + width; col++)
-            {
+        for (uint32_t row = y; row < y + height; row++) {
+            for (uint32_t col = x; col < x + width; col++) {
                 grid_set_tile(&grid, row, col, FLOOR);
                 grid_set_region(&grid, row, col, grid.region_count);
             }
@@ -394,12 +357,9 @@ void create_dungeon(void)
 
 
     //now carve mazes
-    for (uint32_t row = 1; row < grid.height; row += 2)
-    {
-        for (uint32_t col = 1; col < grid.width; col += 2)
-        {
-            if (grid_get_tile(&grid, row, col) == WALL)
-            {
+    for (uint32_t row = 1; row < grid.height; row += 2) {
+        for (uint32_t col = 1; col < grid.width; col += 2) {
+            if (grid_get_tile(&grid, row, col) == WALL) {
                 grow_maze(&grid, col, row);
             }
         }
@@ -414,10 +374,8 @@ void create_dungeon(void)
     FILE *test_map = fopen("./assets/tilemaps/dungeon.map", "w");
     char *buf = memory_alloc(1024*1024, MEM_TAG_TEMP);
     char *ptr = buf;
-    for (uint32_t row = 0; row  < GRID_SIZE; row++)
-    {
-        for (uint32_t col = 0; col < GRID_SIZE; col++)
-        {
+    for (uint32_t row = 0; row  < GRID_SIZE; row++) {
+        for (uint32_t col = 0; col < GRID_SIZE; col++) {
             int val = 11;
             if (grid_get_tile(&grid, row,col) == FLOOR) val = 140;
             ptr += sprintf(ptr, "%03d,",val);
@@ -431,10 +389,8 @@ void create_dungeon(void)
     memset(buf, 0, 1024 * 1024);
 
     //visualisation
-    for (uint32_t row = 0; row  < GRID_SIZE; row++)
-    {
-        for (uint32_t col = 0; col < GRID_SIZE; col++)
-        {
+    for (uint32_t row = 0; row  < GRID_SIZE; row++) {
+        for (uint32_t col = 0; col < GRID_SIZE; col++) {
             ptr += sprintf(ptr, "%03d,",grid_get_region(&grid, row, col));
         }
         ptr += sprintf(ptr, "\n");
