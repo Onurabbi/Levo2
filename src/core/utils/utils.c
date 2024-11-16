@@ -1,6 +1,6 @@
 #include "utils.h"
-#include "../memory/memory.h"
-#include "../logger/logger.h"
+#include <memory.h>
+#include <logger.h>
 
 #include <stdio.h>
 #include <assert.h>

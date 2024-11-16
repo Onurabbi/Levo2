@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "../../platform/platform.h"
+#include <platform.h>
 
 #define MAX_SSBO_PER_SKINNED_MODEL       32
 #define MAX_TEXTURES_PER_SKINNED_MODEL   32
@@ -12,6 +12,7 @@ typedef enum
 {
     SHADER_TYPE_STATIC_GEOMETRY,
     SHADER_TYPE_SKINNED_GEOMETRY,
+    SHADER_TYPE_PBR_SKINNED
 }renderer_shader_type_e;
 
 typedef enum 
@@ -74,6 +75,28 @@ typedef enum
     RENDER_DATA_STATIC_MODEL,
 }render_data_type_e;
 
+//! TODO: Using multiple buffers for now. Switch to single buffer and multiple offsets 
+#define MAX_BUFFERS_PER_RENDERBUFFER       3
+
+typedef enum
+{
+    RENDERBUFFER_TYPE_VERTEX_BUFFER,
+    RENDERBUFFER_TYPE_INDEX_BUFFER,
+    RENDERBUFFER_TYPE_UNIFORM_BUFFER,
+    RENDERBUFFER_TYPE_STAGING_BUFFER,
+    RENDERBUFFER_TYPE_READ_BUFFER,
+    RENDERBUFFER_TYPE_STORAGE_BUFFER
+}renderbuffer_type_e;
+
+//! NOTE: these are meant to be used as indices to descriptor set layout array in a shader
+typedef enum
+{
+    //uniform buffer with global, per-frame or per-view data
+    DESCRIPTOR_SET0,
+    //uniform buffer and texture descriptors for per-material/object data (albedo map, fresnel coefficient etc)
+    DESCRIPTOR_SET1,
+}descriptor_set_type_e;
+
 typedef struct
 {
     render_data_type_e type;
@@ -93,10 +116,15 @@ typedef enum
 
 typedef unsigned int renderer_config_flags_t;
 
+struct bulk_data_vulkan_buffer_t;
+struct bulk_data_vulkan_texture_t;
+
 typedef struct 
 {
     const char                 *app_name;
     renderer_config_flags_t     flags;
+    struct bulk_data_vulkan_buffer_t   *vulkan_buffers;
+    struct bulk_data_vulkan_texture_t  *vulkan_textures;
 }renderer_config_t;
 
 typedef struct
@@ -106,9 +134,28 @@ typedef struct
 
 typedef struct
 {
+    void                  *internal_data;//api specific data
+    descriptor_set_type_e  descriptor_set;
+}texture_t;
+
+typedef struct
+{
     renderer_shader_type_e type;
     void                   *internal_data;
 }shader_t;
+
+/**
+ * @brief: API agnostic general purpose buffer structure
+ * this is used for everything vulkan_buffer_t is used for i.e: uniform buffers, vertex/index buffers etc. 
+ */
+typedef struct
+{
+    renderbuffer_type_e   type;
+    uint32_t              buffers[MAX_BUFFERS_PER_RENDERBUFFER];
+    uint32_t              buffer_count;
+    uint32_t              used;
+    uint32_t              size;
+}renderbuffer_t;
 
 typedef struct
 {
@@ -139,6 +186,9 @@ typedef struct
     uint32_t   instance_count;
 }shader_resource_list_t;
 
+struct bulk_data_renderbuffer_t;
+struct bulk_data_texture_t;
+
 /**
  * @brief For now we won't have a front-end structure to hold api-agnostic render data
  *        we might need one eventually
@@ -165,10 +215,10 @@ typedef struct renderer_backend_t
     bool (*create_renderbuffer)(struct renderer_backend_t *, renderbuffer_t *, renderbuffer_type_e, uint8_t *, uint32_t);
     void (*copy_to_renderbuffer)(struct renderer_backend_t *, renderbuffer_t *, void *, uint32_t);
     bool (*bind_buffer)(struct renderer_backend_t *, renderbuffer_t*, shader_t*);
-    bool (*create_shader)(struct renderer_backend_t *, shader_t *);
+    bool (*create_shader)(struct renderer_backend_t *, shader_t *, const char *vert_code, const char *frag_code);
     bool (*use_shader)(struct renderer_backend_t *, shader_t *);
     bool (*shader_bind_resource)(struct renderer_backend_t *, shader_t *, render_data_type_e, void *);
-    void*(*create_render_data)(struct renderer_backend_t *,render_data_config_t *config);
+    void*(*create_render_data)(struct renderer_backend_t *, struct bulk_data_renderbuffer_t *, render_data_type_e, void *);
     bool (*initialize_shader)(struct renderer_backend_t *, shader_t *,  shader_resource_list_t *);
     bool (*create_texture)(struct renderer_backend_t *, texture_t *, const char *);
     bool (*bind_vertex_buffers)(struct renderer_backend_t *, renderbuffer_t *);
@@ -177,6 +227,8 @@ typedef struct renderer_backend_t
     bool (*push_constants)(struct renderer_backend_t *, shader_t *, const void *,uint32_t, uint32_t, renderer_shader_stage_e);
     bool (*draw_indexed)(struct renderer_backend_t *,int32_t,uint32_t, uint32_t,uint32_t,uint32_t);
 }renderer_backend_t;
+
+
 
 typedef struct 
 {
@@ -196,6 +248,9 @@ typedef struct
     //render target count
     uint32_t current_frame;
     uint32_t max_frames_in_flight;
+
+    struct bulk_data_renderbuffer_t *renderbuffers;
+    struct bulk_data_texture_t *textures;
 }renderer_t;
 
 #endif

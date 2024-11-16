@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stddef.h>
 
-#include "../logger/logger.h"
+#include <logger.h>
 
 #define MAX_ALLOC_COUNT 16384
 #define ALIGNMENT_BYTES 8

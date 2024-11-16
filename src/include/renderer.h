@@ -1,10 +1,11 @@
 #ifndef RENDERER_H_
 #define RENDERER_H_
 
-#include "renderer_types.h"
-#include "../../platform/platform.h"
+#include <renderer.h>
+#include <platform.h>
+#include <stdbool.h>
 
-bool renderer_initialize(renderer_t *renderer, window_t *window, renderer_config_t config);
+bool renderer_initialize(renderer_t *renderer, window_t *window, renderer_config_t config, struct bulk_data_renderbuffer_t *renderbuffers, struct bulk_data_texture_t *textures);
 void renderer_shutdown(renderer_t *renderer);
 void renderer_destroy_window(renderer_t *renderer, window_t *window);
 
@@ -22,11 +23,11 @@ bool renderer_create_texture(renderer_t *renderer, texture_t *texture, const cha
 bool renderer_create_renderbuffer(renderer_t *renderer, renderbuffer_t *renderbuffer, renderbuffer_type_e type, uint8_t *data, uint32_t size);
 void renderer_copy_to_renderbuffer(renderer_t *renderer, renderbuffer_t *renderbuffer, void *src, uint32_t size);
 
-bool renderer_create_shader(renderer_t *renderer, bulk_data_renderbuffer_t *renderbuffers, renderer_shader_type_e shader_type);
+bool renderer_create_shader(renderer_t *renderer, renderer_shader_type_e shader_type);
 bool renderer_use_shader(renderer_t *renderer, renderer_shader_type_e shader_type);
 bool renderer_initialize_shader(renderer_t *renderer, renderer_shader_type_e shader_type, shader_resource_list_t *resource_list);
 
-void *renderer_create_render_data(renderer_t *renderer, render_data_config_t *config);
+void *renderer_create_render_data(renderer_t *renderer, render_data_type_e type, void *data);
 bool renderer_shader_bind_resource(renderer_t *renderer, renderer_shader_type_e shader_type, render_data_type_e type, void *render_data);
 bool renderer_bind_vertex_buffers(renderer_t *renderer, renderbuffer_t *vertex_buffer);
 bool renderer_bind_index_buffers(renderer_t *renderer, renderbuffer_t *index_buffer);

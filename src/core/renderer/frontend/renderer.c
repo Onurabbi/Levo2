@@ -1,8 +1,8 @@
 #include "renderer.h"
-#include "../../memory/memory.h"
-#include "../../logger/logger.h"
-#include "../../asset_store/asset_store.h"
-#include "../vulkan_backend/vulkan_backend.h"
+#include <memory.h>
+#include <logger.h>
+#include <asset_store.h>
+#include <vulkan_backend.h>
 
 enum
 {
@@ -15,8 +15,10 @@ static uint32_t get_number_of_frames(renderer_backend_t *backend)
     return backend->get_num_frames_in_flight(backend);
 }
 
-bool renderer_initialize(renderer_t *renderer, window_t *window, renderer_config_t config)
+bool renderer_initialize(renderer_t *renderer, window_t *window, renderer_config_t config, struct bulk_data_renderbuffer_t *renderbuffers, struct bulk_data_texture_t *textures)
 {
+    renderer->renderbuffers = renderbuffers;
+    renderer->textures = textures;
     renderer->current_frame = 0;
     renderer->uniform_buffer_index = 0;
     renderer->current_shader = NULL;
@@ -120,30 +122,44 @@ bool renderer_use_shader(renderer_t *renderer, renderer_shader_type_e shader_typ
     return success;
 }
 
-bool renderer_create_shader(renderer_t *renderer, bulk_data_renderbuffer_t *renderbuffers, renderer_shader_type_e shader_type)
+bool renderer_create_shader(renderer_t *renderer, renderer_shader_type_e shader_type)
 {
     if (shader_type < 0 || shader_type >= MAX_SHADER_COUNT) return false;
 
     shader_t *shader = &renderer->shaders[shader_type];
     shader->type = shader_type;
 
-    bool success =  renderer->backend->create_shader(renderer->backend, shader);
+    const char *vert_code = NULL;
+    const char *frag_code = NULL;
+    
+    switch (shader_type)
+    {
+        case SHADER_TYPE_PBR_SKINNED:
+            vert_code = "./assets/shaders/pbr.vert.spv";
+            frag_code = "./assets/shaders/pbr.frag.spv";
+            break;
+        case SHADER_TYPE_SKINNED_GEOMETRY:
+            vert_code = "./assets/shaders/skinnedmodel.vert.spv";
+            frag_code = "./assets/shaders/skinnedmodel.frag.spv";
+            break;
+        case SHADER_TYPE_STATIC_GEOMETRY:
+        default:
+            assert(false && "Only pbr and skinned geometry shaders are currently supported");
+            break;
+    }
+
+    bool success =  renderer->backend->create_shader(renderer->backend, shader, vert_code, frag_code);
 
     if (renderer->uniform_buffer_index == 0){
-        renderer->uniform_buffer_index = bulk_data_allocate_slot_renderbuffer_t(renderbuffers);
-        renderbuffer_t *renderbuffer = bulk_data_getp_null_renderbuffer_t(renderbuffers, renderer->uniform_buffer_index);
+        renderer->uniform_buffer_index = bulk_data_allocate_slot_renderbuffer_t(renderer->renderbuffers);
+        renderbuffer_t *renderbuffer = bulk_data_getp_null_renderbuffer_t(renderer->renderbuffers, renderer->uniform_buffer_index);
         renderer_create_renderbuffer(renderer, 
                                      renderbuffer, 
                                      RENDERBUFFER_TYPE_UNIFORM_BUFFER,
                                      NULL, 
                                      sizeof(scene_uniform_data_t));
-        render_data_config_t config = {0};
-        config.type = RENDER_DATA_SCENE_UNIFORMS;
-        config.buffer_count = renderbuffer->buffer_count;
-        for (uint32_t i = 0; i < config.buffer_count; i++) {
-            config.buffer_indices[i] = renderbuffer->buffers[i];
-        }
-        renderer->uniform_buffer_render_data = renderer_create_render_data(renderer, &config);
+
+        renderer->uniform_buffer_render_data = renderer_create_render_data(renderer, RENDER_DATA_SCENE_UNIFORMS, renderbuffer);
     }
     return success;
 }
@@ -154,7 +170,7 @@ bool renderer_create_texture(renderer_t *renderer, texture_t *texture, const cha
 }
 
 bool renderer_create_renderbuffer(renderer_t *renderer, 
-                                  renderbuffer_t *renderbuffer, 
+                                  renderbuffer_t *renderbuffer,
                                   renderbuffer_type_e type, 
                                   uint8_t *buffer_data, 
                                   uint32_t size)
@@ -189,9 +205,9 @@ bool renderer_draw_indexed(renderer_t *renderer, int32_t vertex_offset, uint32_t
     return renderer->backend->draw_indexed(renderer->backend, vertex_offset, first_index, index_count, first_instance, instance_count);
 }
 
-void *renderer_create_render_data(renderer_t *renderer, render_data_config_t *config)
+void *renderer_create_render_data(renderer_t *renderer, render_data_type_e type, void *data)
 {
-    return renderer->backend->create_render_data(renderer->backend, config);
+    return renderer->backend->create_render_data(renderer->backend, renderer->renderbuffers, type, data);
 }
 
 bool renderer_initialize_shader(renderer_t *renderer, renderer_shader_type_e shader_type, shader_resource_list_t *resources)

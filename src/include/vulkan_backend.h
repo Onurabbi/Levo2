@@ -1,9 +1,9 @@
 #ifndef VULKAN_RENDERER_H_
 #define VULKAN_RENDERER_H_
 
-#include "vulkan_types.h"
-#include "../frontend/renderer_types.h"
-#include "../../../game_types.h"
+#include <vulkan_types.h>
+#include <renderer_types.h>
+#include <game_types.h>
 
 #include <SDL2/SDL.h>
 
@@ -24,12 +24,12 @@ void vulkan_backend_copy_to_renderbuffer(struct renderer_backend_t *backend, ren
 bool vulkan_backend_bind_vertex_buffers(struct renderer_backend_t *backend, renderbuffer_t *vertex_buffer);
 bool vulkan_backend_bind_index_buffers(struct renderer_backend_t *backend, renderbuffer_t *index_buffer);
 
-bool vulkan_backend_create_shader(struct renderer_backend_t *backend, shader_t *shader);
+bool vulkan_backend_create_shader(struct renderer_backend_t *backend, shader_t *shader, const char *vert_code, const char *frag_code);
 bool vulkan_backend_use_shader(struct renderer_backend_t *backend, shader_t *shader);
 bool vulkan_backend_initialize_shader(renderer_backend_t *backend, shader_t *shader, shader_resource_list_t *resources);
 bool vulkan_backend_shader_bind_resource(renderer_backend_t *backend, shader_t *shader, render_data_type_e type, void *render_data);
 
-void *vulkan_backend_create_render_data(struct renderer_backend_t *backend, render_data_config_t *config);
+void *vulkan_backend_create_render_data(struct renderer_backend_t *backend, struct bulk_data_renderbuffer_t *renderbuffers, render_data_type_e type, void *data);
 
 bool vulkan_backend_create_texture(struct renderer_backend_t *backend, texture_t *texture, const char *file_path);
 

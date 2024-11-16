@@ -1,5 +1,5 @@
-#include "camera.h"
-#include "../../math/math_utils.h"
+#include <camera.h>
+#include <math_utils.h>
 
 void camera_get_view_matrix(camera_t *camera, mat4f_t *mat)
 {

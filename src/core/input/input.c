@@ -1,4 +1,4 @@
-#include "input.h"
+#include <input.h>
 #include <SDL2/SDL.h>
 
 void process_input(input_t *input)

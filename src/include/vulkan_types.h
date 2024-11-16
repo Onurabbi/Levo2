@@ -2,8 +2,7 @@
 #define VULKAN_TYPES_H_
 
 #include <vulkan/vulkan.h>
-#include "../../containers/bulk_data_types.h"
-#include "../../math/math_types.h"
+#include <math_types.h>
 
 #define MAX_FRAMES_IN_FLIGHT             2
 #define MAX_TEXTURE_COUNT                128
@@ -16,6 +15,25 @@
 #define MAX_SWAPCHAIN_IMAGE_COUNT        4
 
 #define VK_CHECK(fn) (assert((fn) == VK_SUCCESS))
+
+typedef struct 
+{
+    VkBuffer        buffer;
+    VkDeviceMemory  memory;
+    void           *mapped;
+    VkDeviceSize    buffer_size;
+}vulkan_buffer_t;
+
+typedef struct
+{
+    uint32_t        w,h;
+    uint32_t        mip_levels;
+    VkImage         image;
+    VkImageView     view;
+    VkSampler       sampler;
+    VkImageLayout   layout;
+    VkDeviceMemory  memory;
+}vulkan_texture_t;
 
 typedef struct
 {
@@ -75,6 +93,9 @@ typedef struct
     vec2f_t pos;
     vec2f_t tex_coord;
 }vertex_t;
+
+struct bulk_data_vulkan_buffer_t;
+struct bulk_data_vulkan_texture_t;
 
 /**
  * @brief Vulkan rendering backend internal context
@@ -142,8 +163,8 @@ typedef struct
     uint32_t         image_index; //next swapchain image index
     bool             validation_enabled;
 
-    bulk_data_vulkan_texture_t textures;
-    bulk_data_vulkan_buffer_t  buffers;
+    struct bulk_data_vulkan_texture_t *textures;
+    struct bulk_data_vulkan_buffer_t  *buffers;
 }vulkan_context_t;
 
 

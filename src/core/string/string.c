@@ -1,5 +1,5 @@
 #include "string.h"
-#include "../memory/memory.h"
+#include <memory.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -7,7 +7,23 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-const char *format_string(memory_tag_t tag,const char *format,  ...)
+const char *string_replace_character(const char *str, char from, char to, memory_tag_t tag)
+{
+    size_t len = strlen(str);
+    char *result = memory_alloc(len + 1, tag);
+    char *dst = result;
+    while(*str) {
+        if (*str == from) {
+            *dst = to;
+        } else {
+            *dst = *str;
+        }
+        str++;
+    }
+    return result;
+}
+
+const char *string_format(memory_tag_t tag,const char *format,  ...)
 {
     char buf[1024];
     memset(buf, 0, 1024);
@@ -62,7 +78,7 @@ static inline bool find_in_delim(const char *delim, char c)
     return false;
 }
 
-const char *find_last_of(const char *str, const char *delim)
+const char *string_find_last_of(const char *str, const char *delim)
 {
     const char *last_delim = NULL;
     const char *ptr        = str;
@@ -75,9 +91,9 @@ const char *find_last_of(const char *str, const char *delim)
     return NULL;
 }
 
-const char *file_name_wo_extension(const char *file_name, memory_tag_t tag)
+const char *string_get_file_name_wo_extension(const char *file_name, memory_tag_t tag)
 {
-    const char *start = find_last_of(file_name, "/\\");
+    const char *start = string_find_last_of(file_name, "/\\");
     const char *end   = start;
 
     while (*end) {
@@ -89,6 +105,30 @@ const char *file_name_wo_extension(const char *file_name, memory_tag_t tag)
 
     char *result = memory_alloc(len + 1, tag);
     memmove(result, start, len);
+    result[len] = '\0';
+
+    return result;
+}
+
+const char *string_get_file_directory(const char *file_path, memory_tag_t tag)
+{
+    if (!file_path) return NULL;
+
+    const char *ptr = file_path;
+    while (*ptr){ptr++;}
+    
+    while(*ptr != '/' && 
+          *ptr != '\\' && 
+           ptr != file_path) {
+        ptr--;
+    }
+    
+    ptr++;
+    
+    size_t len = (ptr - file_path);
+
+    char *result = memory_alloc(len + 1, tag);
+    memmove(result, file_path, len);
     result[len] = '\0';
 
     return result;

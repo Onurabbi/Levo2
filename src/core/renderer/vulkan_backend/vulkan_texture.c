@@ -1,10 +1,10 @@
-#include "vulkan_texture.h"
-#include "vulkan_backend.h"
-#include "vulkan_buffer.h"
-#include "vulkan_common.h"
+#include <vulkan_texture.h>
+#include <vulkan_backend.h>
+#include <vulkan_buffer.h>
+#include <vulkan_common.h>
 
-#include "../../memory/memory.h"
-#include "../../logger/logger.h"
+#include <memory.h>
+#include <logger.h>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb/stb_image.h>

@@ -1,4 +1,4 @@
-#include "vulkan_common.h"
+#include <vulkan_common.h>
 #include <assert.h>
 
 bool get_memory_type(VkPhysicalDeviceMemoryProperties *memProperties,

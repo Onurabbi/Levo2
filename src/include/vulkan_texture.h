@@ -1,7 +1,8 @@
 #ifndef VULKAN_TEXTURE_H_
 #define VULKAN_TEXTURE_H_
 
-#include "vulkan_types.h"
+#include <vulkan_types.h>
+#include <stdbool.h>
 
 bool vulkan_texture_from_file(vulkan_texture_t *texture, vulkan_context_t *renderer, const char *file_path);
 bool vulkan_ktx_texture_from_file(vulkan_texture_t *texture, vulkan_context_t *renderer, const char *file_path);

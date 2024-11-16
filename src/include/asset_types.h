@@ -3,12 +3,24 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
+
 #include <stb/stb_ds.h>
-#include "../containers/containers.h"
-#include "../renderer/frontend/renderer_types.h"
-#include "../math/math_types.h"
+#include <containers.h>
+#include <math_types.h>
 
 #define ENTITY_CAN_COLLIDE 0x1
+#define NIL UINT32_MAX
+#define MODEL_NODE_CHILDREN_COUNT 8
+#define MAX_ANIMATION_SAMPLER_INPUT_COUNT  128
+#define MAX_ANIMATION_SAMPLER_OUTPUT_COUNT 128
+#define MAX_ANIMATION_CHANNEL_COUNT        64
+#define MAX_ANIMATIONS_PER_MODEL           32
+#define MAX_MATERIALS_PER_MODEL            2
+#define MAX_TEXTURES_PER_MODEL             16
+#define MAX_NODES_PER_MODEL                72
+#define MAX_BONES_PER_SKIN                 256
+#define MAX_PRIMITIVES_PER_MESH            4
 
 typedef enum 
 {
@@ -154,7 +166,7 @@ typedef struct
 {
     const char *name;
 
-    uint32_t  children[4];
+    uint32_t  children[MODEL_NODE_CHILDREN_COUNT];
     uint32_t  child_count;
 
     mat4f_t   local_transform;
@@ -189,21 +201,56 @@ typedef struct
     uint32_t  node_count;
 } gltf_scene_t;
 
+typedef struct gltf_texture_info 
+{
+    //texture index into textures array
+    uint32_t index;
+    //used for printing TEXCOORD0+texcoord
+    uint32_t tex_coord;
+}gltf_texture_info_t;
+
 typedef struct 
 {
-    uint32_t base_color_texture_index;
-    uint32_t tex_coord;
-    
+    gltf_texture_info_t specular_texture;
+    gltf_texture_info_t specular_color_texture;
+    float specular_factor;
+    vec3f_t specular_color_factor;
+}gltf_specular_t;
+
+typedef struct 
+{
+    gltf_texture_info_t base_color_texture;
+    gltf_texture_info_t metallic_roughness_texture;
+
     float    metallic_factor;
     float    roughness_factor;
     vec4f_t  base_color_factor;
-
 }gltf_pbr_metallic_roughness_t;
 
 typedef struct
 {
+    uint32_t index;
+    uint32_t tex_coord;
+    float    scale;
+}gltf_normal_texture_info_t;
+
+typedef struct 
+{
+    uint32_t index;
+    uint32_t tex_coord;
+    float    strength;
+}gltf_occlusion_texture_info_t;
+
+typedef struct
+{
     const char *name;
-    gltf_pbr_metallic_roughness_t pbr_metallic_roughness;
+
+    gltf_pbr_metallic_roughness_t *pbr_metallic_roughness;
+    gltf_normal_texture_info_t *normal_texture;
+    gltf_texture_info_t *emissive_texture;
+    gltf_occlusion_texture_info_t *occlusion_texture;
+    gltf_specular_t *specular;
+    
     vec3f_t emissive_factor;
     uint32_t alpha_mode;
     bool double_sided;
@@ -253,9 +300,7 @@ typedef struct
     uint32_t            mesh_count;
 
     uint32_t           *vertex_counts;         //one per mesh
-    size_t             *vertices_byte_lengths; //one per mesh
     uint32_t           *index_counts;          //one per mesh
-    size_t             *indices_byte_lengths;  //one per mesh
 
     gltf_material_t    *materials;
     uint32_t            material_count;
@@ -278,15 +323,152 @@ typedef enum {
     ASSET_TYPE_SKINNED_MODEL,
 }asset_type_e;
 
+typedef struct
+{
+    vec3f_t pos;
+    vec3f_t normal;
+    vec2f_t uv;
+    //vec3f_t color;
+    vec4f_t joint_indices;
+    vec4f_t joint_weights;
+} skinned_vertex_t;
+
+typedef struct 
+{
+    alpha_mode_e alpha_mode;
+    
+    //! NOTE: bulk data index;
+    uint32_t base_color_texture;
+    uint32_t metallic_roughness_texture;
+    uint32_t normal_texture;
+    uint32_t occlusion_texture;
+    uint32_t emissive_texture;
+
+    vec4f_t base_color_factor;
+
+    vec3f_t emissive_factor;
+
+    float metallic_factor;
+    float roughness_factor;
+    float normal_scale;
+    float occlusion_strength;
+    float alpha_cut_off;
+
+    //! NOTE: extension
+    uint32_t specular_texture;
+    uint32_t specular_color_texture;
+    float specular_factor;
+    vec3f_t specular_color_factor;
+    
+    bool double_sided;
+} material_t;
+
+typedef struct 
+{
+    uint8_t   joints[MAX_BONES_PER_SKIN];
+    mat4f_t   inverse_bind_matrices[MAX_BONES_PER_SKIN];
+    uint32_t  joint_count;
+    //bulk data
+    uint32_t  ssbo;
+    uint8_t   skeleton_root;
+} skin_t;
+
+typedef struct 
+{
+    uint32_t first_index;
+    uint32_t index_count;
+    uint32_t material;
+}mesh_primitive_t;
+
+typedef struct 
+{
+    mesh_primitive_t primitives[MAX_PRIMITIVES_PER_MESH];
+}mesh_t;
+
+typedef struct 
+{
+    uint32_t  interpolation;
+
+    float     inputs[MAX_ANIMATION_SAMPLER_INPUT_COUNT];
+    uint32_t  input_count;
+
+    vec4f_t   outputs[MAX_ANIMATION_SAMPLER_OUTPUT_COUNT];
+    uint32_t  output_count;
+} animation_sampler_t;
+
+typedef struct 
+{
+    uint32_t path;   //enum
+    uint32_t node;   //index
+    uint32_t sampler;//index
+} animation_channel_t;
+
+typedef struct 
+{
+    //! NOTE: heap
+    animation_sampler_t *samplers;
+    uint32_t sampler_count;
+    
+    //! NOTE: heap
+    animation_channel_t *channels;
+    uint32_t channel_count;
+
+    float start_time;
+    float end_time;
+    float current_time;
+} animation_t;
+
+typedef struct
+{
+    uint32_t    parent;
+    uint32_t    index;
+    quat_t      rotation;
+    vec3f_t     translation;
+    vec3f_t     scale;
+    mat4f_t     local_transform;
+    uint32_t    skin;
+    uint32_t    mesh;
+}model_node_t;
+
+typedef struct
+{
+    //! @brief rendering api specific data. i.e. descriptor sets for vulkan. allocated on MEM_TAG_HEAP
+    void           *rendering_data;
+
+    uint32_t        vertex_buffer;
+    uint32_t        index_buffer;
+
+    //! animations are stored in struct
+    animation_t    animations[MAX_ANIMATIONS_PER_MODEL];        
+    uint32_t       animation_count;
+
+    //! nodes are stored in struct
+    model_node_t   nodes[MAX_NODES_PER_MODEL];
+    uint32_t       node_count;
+
+    uint8_t        skeleton_root;
+
+    skin_t         skin;
+    material_t     materials[MAX_MATERIALS_PER_MODEL];
+    uint32_t       material_count;
+
+    mesh_t         mesh;
+
+    uint32_t       active_animation;
+} skinned_model_t;
+
+struct bulk_data_texture_t;
+struct bulk_data_skinned_model_t;
+
 //! NOTE: this structure only holds indices to bulk data
 typedef struct 
 {
     //api agnostic texture data
     string_hash_entry_t        *texture_map;
-    bulk_data_texture_t        *textures;
+    struct bulk_data_texture_t        *textures;
     //data related to skinned models
     string_hash_entry_t        *skinned_model_map;
-    bulk_data_skinned_model_t  *skinned_models;
+    struct bulk_data_skinned_model_t  *skinned_models;
 }asset_store_t;
 
 

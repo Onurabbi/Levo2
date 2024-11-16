@@ -1,7 +1,7 @@
 #ifndef VULKAN_COMMON_H_
 #define VULKAN_COMMON_H_
 
-#include "vulkan_types.h"
+#include <vulkan_types.h>
 #include <stdbool.h>
 
 bool get_memory_type(VkPhysicalDeviceMemoryProperties *memProperties,

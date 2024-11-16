@@ -1,7 +1,7 @@
 #ifndef COLLISION_H_
 #define COLLISION_H_
 
-#include "../core/math/math_types.h"
+#include <math_types.h>
 #include <stdbool.h>
 
 bool rect_vs_rect(rect_t r1, rect_t r2);

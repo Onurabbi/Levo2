@@ -1,8 +1,8 @@
-#include "generator.h"
-#include "../logger/logger.h"
-#include "../../systems/collision.h"
-#include "../memory/memory.h"
-#include "../math/math_types.h"
+#include <generator.h>
+#include <logger.h>
+#include <collision.h>
+#include <memory.h>
+#include <math_types.h>
 
 #include <stdlib.h>
 #include <string.h>

@@ -1,10 +1,10 @@
 #include "asset_store.h"
 
-#include "../renderer/frontend/renderer.h"
-#include "../containers/containers.h"
+#include <renderer.h>
+#include <containers.h>
 
-#include "../logger/logger.h"
-#include "../string/string.h"
+#include <logger.h>
+#include <string_utils.h>
 
 #define STB_DS_IMPLEMENTATION
 #include <stb/stb_ds.h>
@@ -18,7 +18,7 @@ void asset_store_init(asset_store_t *asset_store, bulk_data_texture_t *textures,
     asset_store->texture_map = NULL;
     asset_store->skinned_model_map = NULL;
 
-    asset_store->textures = textures;
+    asset_store->textures       = textures;
     asset_store->skinned_models = skinned_models;
 }
 
@@ -42,13 +42,13 @@ void asset_store_add_texture(asset_store_t *store,
     }
 }
 
-void asset_store_add_skinned_model(asset_store_t *asset_store, renderer_t *renderer, const char *asset_id, const char *file_path, bulk_data_renderbuffer_t *renderbuffers)
+void asset_store_add_skinned_model(asset_store_t *asset_store, renderer_t *renderer, const char *asset_id, const char *file_path, struct bulk_data_renderbuffer_t *renderbuffers)
 {
     if ((shgetp_null(asset_store->skinned_model_map, asset_id)) == NULL) {
         uint32_t slot = bulk_data_allocate_slot_skinned_model_t(asset_store->skinned_models);
         skinned_model_t *model = bulk_data_getp_null_skinned_model_t(asset_store->skinned_models, slot);
         if (model) {
-            if (!create_skinned_model(model, file_path, asset_id, renderer, asset_store, renderbuffers)) {
+            if (!skinned_model_create(model, file_path, asset_id, renderer, asset_store)) {
                 LOGE("Unable to load skinned model from file: %s", file_path);
                 bulk_data_delete_item_skinned_model_t(asset_store->skinned_models, slot);
                 return;

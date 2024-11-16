@@ -1,6 +1,6 @@
 #include "math_utils.h"
 
-#include "../logger/logger.h"
+#include <logger.h>
 
 #include <stdint.h>
 #include <assert.h>

@@ -1,7 +1,7 @@
 #ifndef MATH_H_
 #define MATH_H_
 
-#include "math_types.h"
+#include <math_types.h>
 #include <stdbool.h>
 
 void    transform_from_TRS(mat4f_t *transform, vec3f_t translation, quat_t rotation, vec3f_t scale);

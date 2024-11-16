@@ -3,9 +3,9 @@
 #include "player.h"
 #include "game_types.h"
 
-#include "systems/collision.h"
-#include "core/math/math_types.h"
-#include "core/logger/logger.h"
+#include <collision.h>
+#include <math_types.h>
+#include <logger.h>
 
 #include <math.h>
 #include <stdlib.h>
